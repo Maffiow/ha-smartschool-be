@@ -410,15 +410,30 @@ async def test_reauth_with_only_a_code(hass: HomeAssistant, mock_api) -> None:
     assert entry.data[CONF_PASSWORD] == "secret"  # empty password keeps the stored one
 
 
-async def test_stored_session_skips_login(hass: HomeAssistant, mock_api) -> None:
+async def test_stored_session_skips_login(hass: HomeAssistant) -> None:
     """After a restart the saved session is reused, so no new 2FA code is needed."""
+    fresh_logins = []
+
     def restored(api):
         api._is_logged_in = True  # what the real restore_session does
         return True
 
+    def login(api):
+        if not api._is_logged_in:  # the real login() returns early when logged in
+            fresh_logins.append(api)
+
     with patch(f"{API}.restore_session", autospec=True, side_effect=restored), patch(
-        f"{API}.login", autospec=True, side_effect=lambda api: None
-    ) as login:
+        f"{API}.login", autospec=True, side_effect=login
+    ), patch(f"{API}.get_all_evaluations", return_value=EVALUATIONS), patch(
+        f"{API}.get_students", return_value=STUDENTS
+    ), patch(f"{API}.get_messages", return_value=list(INBOX)), patch(
+        f"{API}.get_message_counters", return_value=COUNTERS
+    ), patch(f"{API}.get_future_tasks", side_effect=_tasks), patch(
+        f"{API}.get_hours", return_value=HOURS
+    ), patch(f"{API}.get_lessons", side_effect=_lessons), patch(
+        f"{API}.get_student_planner_id", return_value="1_42_0"
+    ), patch(f"{API}.get_planned_elements", side_effect=_planner):
         entry = await _setup(hass)
+
     assert entry.state is ConfigEntryState.LOADED
-    login.assert_not_called()
+    assert fresh_logins == []
