@@ -1,4 +1,8 @@
 """Smartschool API client."""
+import base64
+import binascii
+import hashlib
+import hmac
 import html as html_lib
 import json
 import logging
@@ -50,6 +54,28 @@ def _el_to_dict(element: ET.Element) -> dict:
     return result
 
 
+def normalize_totp_secret(secret: str) -> str:
+    """Clean an authenticator key as shown by Smartschool ("ABCD EFGH ...")."""
+    cleaned = re.sub(r"[\s-]", "", secret or "").upper()
+    if not cleaned:
+        return ""
+    try:
+        base64.b32decode(cleaned + "=" * (-len(cleaned) % 8))
+    except (binascii.Error, ValueError) as err:
+        raise ValueError("Ongeldige 2FA-sleutel") from err
+    return cleaned
+
+
+def totp_code(secret: str, at: float | None = None, step: int = 30, digits: int = 6) -> str:
+    """RFC 6238 time-based one-time password (as an authenticator app shows it)."""
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    counter = int((time.time() if at is None else at) // step)
+    digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFFFFFF
+    return str(value % 10**digits).zfill(digits)
+
+
 def html_to_text(value: str | None) -> str:
     """Render message HTML as plain text."""
     if not value:
@@ -89,6 +115,14 @@ class SmartschoolBirthdayError(SmartschoolAuthError):
     """Wrong or missing birthday during account verification."""
 
 
+class SmartschoolTwoFactorRequired(SmartschoolAuthError):
+    """Smartschool asks for a 2FA code but no authenticator key is configured."""
+
+
+class SmartschoolTwoFactorFailed(SmartschoolAuthError):
+    """Smartschool rejected the generated 2FA code."""
+
+
 class SmartschoolModuleUnavailable(SmartschoolError):
     """The school (or this account) has this Smartschool module switched off."""
 
@@ -96,7 +130,9 @@ class SmartschoolModuleUnavailable(SmartschoolError):
 class SmartschoolAPI:
     """Client for Smartschool."""
 
-    def __init__(self, base_url: str, username: str, password: str, birthday: str = ""):
+    def __init__(
+        self, base_url: str, username: str, password: str, birthday: str = "", totp_secret: str = ""
+    ):
         self._base_url = base_url.rstrip("/")
         self._login_url = f"{self._base_url}/login"
         self._results_url = f"{self._base_url}/results"
@@ -104,6 +140,7 @@ class SmartschoolAPI:
         self._username = username
         self._password = password
         self._birthday = birthday
+        self._totp_secret = normalize_totp_secret(totp_secret) if totp_secret else ""
         self._studentcard_url = f"{self._base_url}/Studentcard"
         self._students_url = f"{self._base_url}/Studentcard/Student/getStudents"
         self._session = requests.Session()
@@ -192,6 +229,57 @@ class SmartschoolAPI:
 
     def _is_account_verification_page(self, response: requests.Response) -> bool:
         return "/account-verification" in (response.url or "")
+
+    @staticmethod
+    def _is_2fa_page(response: requests.Response) -> bool:
+        url = response.url if isinstance(response.url, str) else ""
+        return bool(re.search(r"^https?://[^/]+/2fa(?:[/?#]|$)", url))
+
+    def _handle_2fa(self, response: requests.Response) -> requests.Response:
+        """Answer Smartschool's two-factor step with a code from the authenticator key."""
+        if not self._totp_secret:
+            raise SmartschoolTwoFactorRequired(
+                "Smartschool vraagt tweestapsverificatie (2FA); vul de 2FA-sleutel van je "
+                "authenticator-app in bij de integratie"
+            )
+
+        config = self._session.get(
+            f"{self._base_url}/2fa/api/v1/config",
+            headers={"Accept": "application/json", "Referer": response.url},
+            timeout=20,
+        )
+        config.raise_for_status()
+        try:
+            mechanisms = config.json().get("possibleAuthenticationMechanisms") or []
+        except ValueError as err:
+            raise SmartschoolConnectionError("2FA-configuratie onleesbaar") from err
+        if "googleAuthenticator" not in mechanisms:
+            raise SmartschoolAuthError(
+                f"Deze 2FA-methode wordt niet ondersteund: {', '.join(mechanisms) or 'onbekend'}"
+            )
+
+        _LOGGER.debug("Answering Smartschool 2FA with an authenticator code")
+        answer = self._session.post(
+            f"{self._base_url}/2fa/api/v1/google-authenticator",
+            data=json.dumps({"google2fa": totp_code(self._totp_secret)}),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+                "Origin": self._base_url,
+                "Referer": response.url,
+            },
+            timeout=20,
+        )
+        _LOGGER.debug("2FA answer: status=%s", answer.status_code)
+
+        home = self._session.get(f"{self._base_url}/", timeout=20, allow_redirects=True)
+        home.raise_for_status()
+        if self._is_2fa_page(home):
+            raise SmartschoolTwoFactorFailed(
+                "Smartschool weigerde de 2FA-code: controleer de 2FA-sleutel en de klok van Home Assistant"
+            )
+        return home
 
     def _handle_account_verification(self, response: requests.Response) -> requests.Response:
         """Submit birthday to the account-verification form."""
@@ -289,8 +377,22 @@ class SmartschoolAPI:
                     "Account-verificatie mislukt — controleer de geboortedatum (formaat JJJJ-MM-DD)"
                 )
 
+        if self._is_2fa_page(post_resp):
+            try:
+                post_resp = self._handle_2fa(post_resp)
+            except requests.exceptions.RequestException as err:
+                raise SmartschoolConnectionError("2FA netwerkfout") from err
+
         if self._is_login_page(post_resp):
             raise SmartschoolAuthError("Login mislukt: teruggeleid naar inlogpagina")
+
+        # Smartschool may only ask for 2FA once a page is opened: check the homepage.
+        try:
+            home = self._session.get(f"{self._base_url}/", timeout=20, allow_redirects=True)
+            if self._is_2fa_page(home):
+                self._handle_2fa(home)
+        except requests.exceptions.RequestException as err:
+            raise SmartschoolConnectionError("Login netwerkfout") from err
 
         try:
             warm = self._session.get(
@@ -592,8 +694,10 @@ class SmartschoolAPI:
 
     def _check_session(self, response: requests.Response) -> None:
         """Raise _SessionExpired for a login page, ModuleUnavailable for a 403."""
-        if self._is_account_verification_page(response) or (
-            "/login" in (response.url or "")
+        if (
+            self._is_account_verification_page(response)
+            or "/login" in (response.url or "")
+            or self._is_2fa_page(response)
         ):
             raise _SessionExpired
         if response.status_code == 403:

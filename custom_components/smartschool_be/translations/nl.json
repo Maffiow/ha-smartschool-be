@@ -8,15 +8,23 @@
           "base_url": "Smartschool URL",
           "username": "Gebruikersnaam",
           "password": "Wachtwoord",
-          "birthday": "Geboortedatum (JJJJ-MM-DD)"
+          "birthday": "Geboortedatum (JJJJ-MM-DD)",
+          "totp_secret": "2FA-sleutel (authenticator-app)"
+        },
+        "data_description": {
+          "totp_secret": "Alleen nodig als je school tweestapsverificatie vraagt. Dit is de geheime sleutel (bv. 'ABCD EFGH ...') die Smartschool toont bij het instellen van je authenticator-app, niet de 6-cijferige code."
         }
       },
       "reauth_confirm": {
         "title": "Opnieuw aanmelden bij Smartschool",
-        "description": "Smartschool weigert de opgeslagen gegevens voor {username}. Geef het (nieuwe) wachtwoord en de geboortedatum in.",
+        "description": "Smartschool weigert de opgeslagen gegevens voor {username}, of vraagt tweestapsverificatie. Geef het wachtwoord, de geboortedatum en zo nodig de 2FA-sleutel in.",
         "data": {
           "password": "Wachtwoord",
-          "birthday": "Geboortedatum (JJJJ-MM-DD)"
+          "birthday": "Geboortedatum (JJJJ-MM-DD)",
+          "totp_secret": "2FA-sleutel (authenticator-app)"
+        },
+        "data_description": {
+          "totp_secret": "Alleen nodig als je school tweestapsverificatie vraagt. Dit is de geheime sleutel (bv. 'ABCD EFGH ...') die Smartschool toont bij het instellen van je authenticator-app, niet de 6-cijferige code."
         }
       }
     },
@@ -25,7 +33,10 @@
       "cannot_connect": "Kan geen verbinding maken",
       "invalid_base_url": "Ongeldige URL (moet met http:// of https:// beginnen)",
       "invalid_birthday": "Ongeldige geboortedatum (gebruik formaat JJJJ-MM-DD, bv. 2010-03-15)",
-      "unknown": "Onbekende fout"
+      "unknown": "Onbekende fout",
+      "invalid_totp_secret": "Ongeldige 2FA-sleutel: gebruik de lettercode uit Smartschool (A-Z en 2-7), niet de 6-cijferige code.",
+      "totp_required": "Je school vraagt tweestapsverificatie: vul de 2FA-sleutel van je authenticator-app in.",
+      "totp_failed": "Smartschool weigerde de 2FA-code. Controleer de sleutel en of de klok van Home Assistant juist staat."
     },
     "abort": {
       "already_configured": "Deze account is al geconfigureerd",

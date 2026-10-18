@@ -19,6 +19,7 @@ from .const import (
     CONF_PLANNER,
     CONF_RESULTS,
     CONF_STUDENTS,
+    CONF_TOTP_SECRET,
     DOMAIN,
 )
 from .coordinator import (
@@ -75,6 +76,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SmartschoolConfigEntry) 
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
         entry.data.get(CONF_BIRTHDAY, ""),
+        entry.data.get(CONF_TOTP_SECRET, ""),
     )
 
     def _login() -> None:

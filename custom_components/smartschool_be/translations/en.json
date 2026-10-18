@@ -8,15 +8,23 @@
           "base_url": "Smartschool URL",
           "username": "Username",
           "password": "Password",
-          "birthday": "Date of birth (YYYY-MM-DD)"
+          "birthday": "Date of birth (YYYY-MM-DD)",
+          "totp_secret": "2FA key (authenticator app)"
+        },
+        "data_description": {
+          "totp_secret": "Only needed when your school asks for two-factor authentication. This is the secret key (e.g. 'ABCD EFGH ...') Smartschool shows when you set up your authenticator app, not the 6-digit code."
         }
       },
       "reauth_confirm": {
         "title": "Re-authenticate with Smartschool",
-        "description": "Smartschool rejected the stored credentials for {username}. Enter the (new) password and date of birth.",
+        "description": "Smartschool rejected the stored credentials for {username}, or asks for two-factor authentication. Enter the password, date of birth and, if needed, the 2FA key.",
         "data": {
           "password": "Password",
-          "birthday": "Date of birth (YYYY-MM-DD)"
+          "birthday": "Date of birth (YYYY-MM-DD)",
+          "totp_secret": "2FA key (authenticator app)"
+        },
+        "data_description": {
+          "totp_secret": "Only needed when your school asks for two-factor authentication. This is the secret key (e.g. 'ABCD EFGH ...') Smartschool shows when you set up your authenticator app, not the 6-digit code."
         }
       }
     },
@@ -25,7 +33,10 @@
       "cannot_connect": "Cannot connect",
       "invalid_base_url": "Invalid URL (must start with http:// or https://)",
       "invalid_birthday": "Invalid date of birth (use format YYYY-MM-DD, e.g. 2010-03-15)",
-      "unknown": "Unknown error"
+      "unknown": "Unknown error",
+      "invalid_totp_secret": "Invalid 2FA key: use the letter code from Smartschool (A-Z and 2-7), not the 6-digit code.",
+      "totp_required": "Your school asks for two-factor authentication: enter the 2FA key of your authenticator app.",
+      "totp_failed": "Smartschool rejected the 2FA code. Check the key and that Home Assistant's clock is correct."
     },
     "abort": {
       "already_configured": "This account is already configured",

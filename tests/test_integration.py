@@ -24,6 +24,7 @@ from custom_components.smartschool_be.smartschool_api import (
     SmartschoolConnectionError,
     SmartschoolError,
     SmartschoolModuleUnavailable,
+    SmartschoolTwoFactorRequired,
 )
 
 API = "custom_components.smartschool_be.smartschool_api.SmartschoolAPI"
@@ -307,7 +308,33 @@ async def test_user_flow(hass: HomeAssistant) -> None:
     ):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], DATA)
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == DATA
+    assert result["data"] == {**DATA, "totp_secret": ""}
+
+
+async def test_user_flow_asks_for_2fa_key(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(f"{API}.login", side_effect=SmartschoolTwoFactorRequired("2fa")):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], DATA)
+    assert result["errors"] == {"totp_secret": "totp_required"}
+
+    # The 6-digit code instead of the key is refused before any login.
+    with patch(f"{API}.login") as login:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**DATA, "totp_secret": "123456"}
+        )
+    assert result["errors"] == {"totp_secret": "invalid_totp_secret"}
+    login.assert_not_called()
+
+    with patch(f"{API}.login"), patch(
+        "custom_components.smartschool_be.async_setup_entry", return_value=True
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**DATA, "totp_secret": "gezd gnbv gy3t qojq"}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["totp_secret"] == "GEZDGNBVGY3TQOJQ"
 
 
 async def test_disabled_module_does_not_trigger_reauth(hass: HomeAssistant, mock_api) -> None:

@@ -8,9 +8,9 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
 from . import SmartschoolConfigEntry
-from .const import CONF_BIRTHDAY
+from .const import CONF_BIRTHDAY, CONF_TOTP_SECRET
 
-TO_REDACT = {CONF_PASSWORD, CONF_USERNAME, CONF_BIRTHDAY}
+TO_REDACT = {CONF_PASSWORD, CONF_USERNAME, CONF_BIRTHDAY, CONF_TOTP_SECRET}
 
 
 def _status(coordinator) -> dict[str, Any] | None:

@@ -64,6 +64,18 @@ Nieuwe versies verschijnen automatisch als update in HACS (en onder **Instelling
 
 > De geboortedatum is nodig omdat Smartschool bij elke nieuwe sessie een verificatiestap uitvoert. Dit is geen 2FA maar een vaste beveiligingsvraag van het platform.
 
+### Tweestapsverificatie (2FA)
+
+Vraagt je school na het inloggen een 6-cijferige code uit een authenticator-app (Google Authenticator, Microsoft Authenticator, ...)? Dan heeft de integratie de **2FA-sleutel** nodig om die code zelf te berekenen:
+
+1. Stel in Smartschool de tweestapsverificatie (opnieuw) in via je profiel.
+2. Kies bij de QR-code voor de optie om de sleutel als tekst te tonen (bv. `ABCD EFGH IJKL ...`).
+3. Voeg die sleutel toe in je authenticator-app **én** vul hem in bij het veld *2FA-sleutel* van de integratie. Spaties mogen.
+
+Heb je de integratie al ingesteld, dan vraagt Home Assistant vanzelf om opnieuw aan te melden zodra Smartschool 2FA vraagt; daar vul je de sleutel in.
+
+> Let op: met de sleutel kan Home Assistant zelf codes maken. Wie toegang heeft tot je Home Assistant, heeft dan beide factoren. Bewaar je backups dus veilig. Vul niet de 6-cijferige code in; die verandert elke 30 seconden.
+
 ## Modules kiezen
 
 Via **Instellingen → Apparaten & diensten → Smartschool BE → Configureren** zet je onderdelen aan of uit:
