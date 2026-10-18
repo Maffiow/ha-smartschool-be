@@ -17,7 +17,14 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .const import CONF_BASE_URL, CONF_BIRTHDAY, CONF_TOTP_SECRET, DOMAIN, MODULE_OPTIONS
+from .const import (
+    CONF_BASE_URL,
+    CONF_BIRTHDAY,
+    CONF_TOTP_CODE,
+    CONF_TOTP_SECRET,
+    DOMAIN,
+    MODULE_OPTIONS,
+)
 from .smartschool_api import (
     SmartschoolAPI,
     SmartschoolAuthError,
@@ -31,8 +38,15 @@ from .smartschool_api import (
 _LOGGER = logging.getLogger(__name__)
 
 _BIRTHDAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_CODE_RE = re.compile(r"^\d{6}$")
 
 _SECRET_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+_CODE_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
+
+
+def stash_session(hass, unique_id: str, cookies: list[dict]) -> None:
+    """Hand the freshly logged-in session to async_setup_entry (no second 2FA code)."""
+    hass.data.setdefault(DOMAIN, {}).setdefault("pending_sessions", {})[unique_id] = cookies
 
 
 class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -47,27 +61,39 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return SmartschoolOptionsFlow()
 
     async def _async_validate(
-        self, base_url: str, username: str, password: str, birthday: str, totp_secret: str
+        self,
+        unique_id: str,
+        base_url: str,
+        username: str,
+        password: str,
+        birthday: str,
+        totp_code: str,
+        totp_secret: str,
     ) -> dict[str, str]:
         """Try to log in and return a dict of form errors (empty when OK)."""
         if not _BIRTHDAY_RE.match(birthday):
             return {CONF_BIRTHDAY: "invalid_birthday"}
+        code = re.sub(r"\s", "", totp_code or "")
+        if code and not _CODE_RE.match(code):
+            return {CONF_TOTP_CODE: "invalid_totp_code"}
         try:
             normalize_totp_secret(totp_secret)
         except TotpSecretError as err:
             return {CONF_TOTP_SECRET: err.reason}
 
         api = SmartschoolAPI(base_url, username, password, birthday, totp_secret)
+        api.set_2fa_code(code)
         try:
             await self.hass.async_add_executor_job(api.login)
+            cookies = await self.hass.async_add_executor_job(api.export_cookies)
         except SmartschoolBirthdayError as err:
             _LOGGER.warning("Smartschool birthday verification failed: %s", err)
             return {CONF_BIRTHDAY: "invalid_birthday"}
         except SmartschoolTwoFactorRequired:
-            return {CONF_TOTP_SECRET: "totp_required"}
+            return {CONF_TOTP_CODE: "totp_required"}
         except SmartschoolTwoFactorFailed as err:
             _LOGGER.warning("Smartschool 2FA failed: %s", err)
-            return {CONF_TOTP_SECRET: "totp_failed"}
+            return {CONF_TOTP_SECRET if totp_secret else CONF_TOTP_CODE: "totp_failed"}
         except SmartschoolAuthError as err:
             _LOGGER.warning("Smartschool login failed: %s", err)
             return {"base": "invalid_auth"}
@@ -77,6 +103,7 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         finally:
             await self.hass.async_add_executor_job(api.close)
 
+        stash_session(self.hass, unique_id, cookies)
         return {}
 
     async def async_step_user(self, user_input=None):
@@ -92,6 +119,7 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_BIRTHDAY,
                     description={"suggested_value": (user_input or {}).get(CONF_BIRTHDAY, "")},
                 ): str,
+                vol.Optional(CONF_TOTP_CODE): _CODE_SELECTOR,
                 vol.Optional(CONF_TOTP_SECRET): _SECRET_SELECTOR,
             }
         )
@@ -108,11 +136,18 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif not username:
                 errors["base"] = "invalid_auth"
             else:
-                await self.async_set_unique_id(f"{base_url}|{username}")
+                unique_id = f"{base_url}|{username}"
+                await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
 
                 errors = await self._async_validate(
-                    base_url, username, password, birthday, totp_secret
+                    unique_id,
+                    base_url,
+                    username,
+                    password,
+                    birthday,
+                    user_input.get(CONF_TOTP_CODE, ""),
+                    totp_secret,
                 )
                 if not errors:
                     return self.async_create_entry(
@@ -133,21 +168,28 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]):
-        """Start reauth when Smartschool rejects the stored credentials."""
+        """Start reauth when Smartschool asks for a (new) 2FA code or rejects the login."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input=None):
-        """Ask for a new password / birthday and validate them."""
+        """Usually only the 6-digit code is needed; the rest is prefilled."""
         errors = {}
         entry = self._get_reauth_entry()
 
         if user_input is not None:
-            password = user_input[CONF_PASSWORD]
-            birthday = user_input[CONF_BIRTHDAY].strip()
+            # An empty password keeps the stored one.
+            password = user_input.get(CONF_PASSWORD) or entry.data[CONF_PASSWORD]
+            birthday = (user_input.get(CONF_BIRTHDAY) or entry.data.get(CONF_BIRTHDAY, "")).strip()
             totp_secret = user_input.get(CONF_TOTP_SECRET, "")
 
             errors = await self._async_validate(
-                entry.data[CONF_BASE_URL], entry.data[CONF_USERNAME], password, birthday, totp_secret
+                entry.unique_id or entry.entry_id,
+                entry.data[CONF_BASE_URL],
+                entry.data[CONF_USERNAME],
+                password,
+                birthday,
+                user_input.get(CONF_TOTP_CODE, ""),
+                totp_secret,
             )
             if not errors:
                 return self.async_update_reload_and_abort(
@@ -161,8 +203,9 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_PASSWORD): str,
-                vol.Required(
+                vol.Optional(CONF_TOTP_CODE): _CODE_SELECTOR,
+                vol.Optional(CONF_PASSWORD): str,
+                vol.Optional(
                     CONF_BIRTHDAY,
                     description={"suggested_value": entry.data.get(CONF_BIRTHDAY, "")},
                 ): str,

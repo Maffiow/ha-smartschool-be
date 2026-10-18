@@ -3,6 +3,7 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
+from requests.cookies import RequestsCookieJar
 
 from custom_components.smartschool_be.smartschool_api import (
     SmartschoolAPI,
@@ -78,6 +79,7 @@ class FakeSession:
         self.passed_2fa = False
         self.posted_code = None
         self.headers = {}
+        self.cookies = RequestsCookieJar()
 
     def _resp(self, path, text="", ctype="text/html", status=200, json_data=None):
         r = MagicMock()
@@ -107,6 +109,8 @@ class FakeSession:
             self.posted_code = json.loads(data)["google2fa"]
             self.posted_headers = kwargs.get("headers") or {}
             self.passed_2fa = self.accept_code
+            if self.passed_2fa:
+                self.cookies.set("PHPSESSID", "abc", domain="s.smartschool.be", path="/")
             return self._resp(path, "{}", ctype="application/json")
         raise AssertionError(f"unexpected POST {path}")
 
@@ -142,3 +146,40 @@ def test_2fa_rejected_code():
     with pytest.raises(SmartschoolTwoFactorFailed):
         api.login()
     assert not api._is_logged_in
+
+
+def test_typed_code_logs_in_once():
+    api = _api()
+    api.set_2fa_code(" 123 456 ")
+    api.login()
+    assert api._is_logged_in
+    assert api._session.posted_code == "123456"
+
+    # The typed code is used up: a later fresh login needs a new one.
+    api._is_logged_in = False
+    api._session.passed_2fa = False
+    with pytest.raises(SmartschoolTwoFactorRequired):
+        api.login()
+
+
+def test_session_cookies_survive_a_restart():
+    api = _api()
+    api.set_2fa_code("123456")
+    api.login()
+    cookies = api.export_cookies()
+    assert any(c["name"] == "PHPSESSID" for c in cookies)
+
+    # "Restart": a new client with the stored cookies is logged in without 2FA.
+    restarted = _api()
+    restarted._session.passed_2fa = True
+    restarted.import_cookies(cookies)
+    assert restarted.restore_session() is True
+    assert restarted._is_logged_in
+    assert restarted._session.posted_code is None
+
+
+def test_expired_session_is_not_restored():
+    api = _api()
+    api.import_cookies([{"name": "PHPSESSID", "value": "old", "domain": "s.smartschool.be", "path": "/"}])
+    assert api.restore_session() is False  # Smartschool sends it to /2fa
+    assert list(api._session.cookies) == []

@@ -66,15 +66,11 @@ Nieuwe versies verschijnen automatisch als update in HACS (en onder **Instelling
 
 ### Tweestapsverificatie (2FA)
 
-Vraagt je school na het inloggen een 6-cijferige code uit een authenticator-app (Google Authenticator, Microsoft Authenticator, ...)? Dan heeft de integratie de **2FA-sleutel** nodig om die code zelf te berekenen:
+Vraagt je school na het inloggen een 6-cijferige code uit een authenticator-app (LastPass, Google of Microsoft Authenticator, ...)? Typ dan bij het instellen gewoon **de code die op dat moment in je app staat** in het veld *2FA-code*.
 
-1. Stel in Smartschool de tweestapsverificatie (opnieuw) in via je profiel.
-2. Kies bij de QR-code voor de optie om de sleutel als tekst te tonen (bv. `ABCD EFGH IJKL ...`).
-3. Voeg die sleutel toe in je authenticator-app **én** vul hem in bij het veld *2FA-sleutel* van de integratie. Spaties mogen.
+Home Assistant bewaart daarna de Smartschool-sessie, ook over herstarts heen, en houdt ze actief. Pas als Smartschool de sessie toch beëindigt, verschijnt de melding **Opnieuw aanmelden**: typ daar opnieuw de huidige code (het wachtwoord mag leeg blijven).
 
-Heb je de integratie al ingesteld, dan vraagt Home Assistant vanzelf om opnieuw aan te melden zodra Smartschool 2FA vraagt; daar vul je de sleutel in.
-
-> Let op: met de sleutel kan Home Assistant zelf codes maken. Wie toegang heeft tot je Home Assistant, heeft dan beide factoren. Bewaar je backups dus veilig. Vul niet de 6-cijferige code in; die verandert elke 30 seconden.
+**Volledig automatisch (optioneel):** vul in plaats daarvan de *2FA-sleutel* in, de geheime lettercode achter de QR-code die je bij het instellen van de authenticator kreeg (een `otpauth://`-link mag ook). Dan maakt Home Assistant zelf de codes en vraagt hij nooit meer om een code. Let op: wie toegang heeft tot je Home Assistant of de backups, heeft dan beide factoren.
 
 ## Modules kiezen
 

@@ -9,22 +9,26 @@
           "username": "Username",
           "password": "Password",
           "birthday": "Date of birth (YYYY-MM-DD)",
-          "totp_secret": "2FA key (authenticator app)"
+          "totp_secret": "2FA key (optional, advanced)",
+          "totp_code": "2FA code (6 digits from your authenticator app)"
         },
         "data_description": {
-          "totp_secret": "Only needed when your school asks for two-factor authentication. This is the secret key (e.g. 'ABCD EFGH ...') Smartschool shows when you set up your authenticator app, not the 6-digit code."
+          "totp_secret": "Leave empty when you use the 6-digit code. With your authenticator's secret key (not the 6 digits) Home Assistant makes codes itself and never asks for one again.",
+          "totp_code": "Only needed when your school asks for two-factor authentication. Type the code currently shown in your app (e.g. LastPass or Google Authenticator). Home Assistant then keeps the session, so you don't need a code every time."
         }
       },
       "reauth_confirm": {
         "title": "Re-authenticate with Smartschool",
-        "description": "Smartschool rejected the stored credentials for {username}, or asks for two-factor authentication. Enter the password, date of birth and, if needed, the 2FA key.",
+        "description": "Smartschool asks for a new 2FA code for {username}, or rejected the stored credentials. Usually the 6-digit code from your authenticator app is enough; leave the password empty to keep the stored one.",
         "data": {
-          "password": "Password",
+          "password": "Password (empty = unchanged)",
           "birthday": "Date of birth (YYYY-MM-DD)",
-          "totp_secret": "2FA key (authenticator app)"
+          "totp_secret": "2FA key (optional, advanced)",
+          "totp_code": "2FA code (6 digits from your authenticator app)"
         },
         "data_description": {
-          "totp_secret": "Only needed when your school asks for two-factor authentication. This is the secret key (e.g. 'ABCD EFGH ...') Smartschool shows when you set up your authenticator app, not the 6-digit code."
+          "totp_secret": "Leave empty when you use the 6-digit code. With your authenticator's secret key (not the 6 digits) Home Assistant makes codes itself and never asks for one again.",
+          "totp_code": "Only needed when your school asks for two-factor authentication. Type the code currently shown in your app (e.g. LastPass or Google Authenticator). Home Assistant then keeps the session, so you don't need a code every time."
         }
       }
     },
@@ -35,9 +39,10 @@
       "invalid_birthday": "Invalid date of birth (use format YYYY-MM-DD, e.g. 2010-03-15)",
       "unknown": "Unknown error",
       "invalid_totp_secret": "Invalid 2FA key: it should be at least 16 characters of A-Z and 2-7 (an otpauth:// link is fine too). Mind O vs 0 and I vs 1.",
-      "totp_required": "Your school asks for two-factor authentication: enter the 2FA key of your authenticator app.",
-      "totp_failed": "Smartschool rejected the 2FA code. Check the key and that Home Assistant's clock is correct.",
-      "totp_looks_like_code": "This is the 6-digit code that changes every 30 seconds. Enter the secret letter code Smartschool shows when you set up the authenticator app."
+      "totp_required": "Your school asks for two-factor authentication: enter the 6-digit code from your authenticator app.",
+      "totp_failed": "Smartschool rejected the code. It changes every 30 seconds: enter the code shown in your app right now and try again.",
+      "totp_looks_like_code": "This is the 6-digit code that changes every 30 seconds. Enter the secret letter code Smartschool shows when you set up the authenticator app.",
+      "invalid_totp_code": "A 2FA code is exactly 6 digits."
     },
     "abort": {
       "already_configured": "This account is already configured",

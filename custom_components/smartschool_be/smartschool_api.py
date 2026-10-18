@@ -172,6 +172,7 @@ class SmartschoolAPI:
         self._password = password
         self._birthday = birthday
         self._totp_secret = normalize_totp_secret(totp_secret) if totp_secret else ""
+        self._pending_code = ""
         self._studentcard_url = f"{self._base_url}/Studentcard"
         self._students_url = f"{self._base_url}/Studentcard/Student/getStudents"
         self._session = requests.Session()
@@ -268,10 +269,15 @@ class SmartschoolAPI:
 
     def _handle_2fa(self, response: requests.Response) -> requests.Response:
         """Answer Smartschool's two-factor step with a code from the authenticator key."""
-        if not self._totp_secret:
+        if self._totp_secret:
+            code = totp_code(self._totp_secret)
+        elif self._pending_code:
+            # A code typed by the user is valid once, for 30 seconds.
+            code, self._pending_code = self._pending_code, ""
+        else:
             raise SmartschoolTwoFactorRequired(
-                "Smartschool vraagt tweestapsverificatie (2FA); vul de 2FA-sleutel van je "
-                "authenticator-app in bij de integratie"
+                "Smartschool vraagt een 2FA-code; meld de integratie opnieuw aan met de "
+                "code uit je authenticator-app"
             )
 
         config = self._session.get(
@@ -292,7 +298,7 @@ class SmartschoolAPI:
         _LOGGER.debug("Answering Smartschool 2FA with an authenticator code")
         answer = self._session.post(
             f"{self._base_url}/2fa/api/v1/google-authenticator",
-            data=json.dumps({"google2fa": totp_code(self._totp_secret)}),
+            data=json.dumps({"google2fa": code}),
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
@@ -308,7 +314,7 @@ class SmartschoolAPI:
         home.raise_for_status()
         if self._is_2fa_page(home):
             raise SmartschoolTwoFactorFailed(
-                "Smartschool weigerde de 2FA-code: controleer de 2FA-sleutel en de klok van Home Assistant"
+                "Smartschool weigerde de 2FA-code (verlopen of fout getypt?)"
             )
         return home
 
@@ -443,6 +449,60 @@ class SmartschoolAPI:
 
         self._is_logged_in = True
         _LOGGER.debug("Successfully logged in to Smartschool.")
+
+    def set_2fa_code(self, code: str) -> None:
+        """Use this 6-digit authenticator code at the next 2FA step."""
+        self._pending_code = re.sub(r"\D", "", code or "")
+
+    def export_cookies(self) -> list[dict]:
+        """Session cookies, to keep the login across restarts (no 2FA code needed)."""
+        return [
+            {
+                "name": c.name,
+                "value": c.value,
+                "domain": c.domain,
+                "path": c.path,
+                "secure": bool(c.secure),
+                "expires": c.expires,
+            }
+            for c in list(self._session.cookies)
+        ]
+
+    def import_cookies(self, cookies: list[dict]) -> None:
+        for c in cookies or []:
+            try:
+                self._session.cookies.set(
+                    c["name"],
+                    c["value"],
+                    domain=c.get("domain") or "",
+                    path=c.get("path") or "/",
+                    secure=bool(c.get("secure")),
+                    expires=c.get("expires"),
+                )
+            except (KeyError, TypeError) as err:
+                _LOGGER.debug("Skipping stored cookie: %s", err)
+
+    def restore_session(self) -> bool:
+        """True when the stored cookies still give a logged-in session."""
+        with self.lock:
+            if not list(self._session.cookies):
+                return False
+            try:
+                home = self._session.get(f"{self._base_url}/", timeout=20, allow_redirects=True)
+            except requests.exceptions.RequestException as err:
+                raise SmartschoolConnectionError("Smartschool niet bereikbaar") from err
+            url = home.url if isinstance(home.url, str) else ""
+            if (
+                "/login" in url
+                or self._is_2fa_page(home)
+                or self._is_account_verification_page(home)
+                or home.status_code >= 400
+            ):
+                _LOGGER.debug("Stored Smartschool session is no longer valid")
+                self._session.cookies.clear()
+                return False
+            self._is_logged_in = True
+            return True
 
     def close(self) -> None:
         """Close the underlying HTTP session."""

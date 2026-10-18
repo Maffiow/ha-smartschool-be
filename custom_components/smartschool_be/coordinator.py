@@ -55,6 +55,8 @@ class _SmartschoolBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.api = api
         self.unavailable_modules: set[str] = set()
+        # Set by async_setup_entry: where the login session is kept across restarts.
+        self.session_store: Store | None = None
 
     def _optional(self, module: str, func: Callable[..., _T], *args: Any, default: _T) -> _T:
         """Call func; a module the school switched off just yields `default`."""
@@ -78,12 +80,17 @@ class _SmartschoolBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            return await self.hass.async_add_executor_job(self._locked_fetch)
+            data = await self.hass.async_add_executor_job(self._locked_fetch)
         except SmartschoolAuthError as err:
             # Triggers the reauth flow in Home Assistant.
             raise ConfigEntryAuthFailed(str(err)) from err
         except SmartschoolError as err:
             raise UpdateFailed(f"Error communicating with Smartschool: {err}") from err
+        if self.session_store is not None:
+            self.session_store.async_delay_save(
+                lambda: {"cookies": self.api.export_cookies()}, 60
+            )
+        return data
 
 
 class SmartschoolCoordinator(_SmartschoolBaseCoordinator):

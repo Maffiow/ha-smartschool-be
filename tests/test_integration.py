@@ -317,7 +317,14 @@ async def test_user_flow_asks_for_2fa_key(hass: HomeAssistant) -> None:
     )
     with patch(f"{API}.login", side_effect=SmartschoolTwoFactorRequired("2fa")):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], DATA)
-    assert result["errors"] == {"totp_secret": "totp_required"}
+    assert result["errors"] == {"totp_code": "totp_required"}
+
+    with patch(f"{API}.login") as login:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**DATA, "totp_code": "12345"}
+        )
+    assert result["errors"] == {"totp_code": "invalid_totp_code"}
+    login.assert_not_called()
 
     # The 6-digit code instead of the key is refused before any login.
     with patch(f"{API}.login") as login:
@@ -382,3 +389,30 @@ async def test_options_switch_modules_off(hass: HomeAssistant, mock_api) -> None
         await hass.services.async_call(
             DOMAIN, "get_message", {"message_id": 2}, blocking=True, return_response=True
         )
+
+
+async def test_reauth_with_only_a_code(hass: HomeAssistant, mock_api) -> None:
+    """When Smartschool asks for a new 2FA code, typing the code is enough."""
+    with patch(f"{API}.login", side_effect=SmartschoolTwoFactorRequired("2fa")):
+        entry = await _setup(hass)
+    flows = hass.config_entries.flow.async_progress()
+    assert flows[0]["context"]["source"] == config_entries.SOURCE_REAUTH
+
+    codes = []
+    with patch(f"{API}.set_2fa_code", side_effect=codes.append), patch(f"{API}.close"):
+        result = await hass.config_entries.flow.async_configure(
+            flows[0]["flow_id"], {"totp_code": "654321"}
+        )
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reauth_successful"
+    assert codes[0] == "654321"
+    assert entry.data[CONF_PASSWORD] == "secret"  # empty password keeps the stored one
+
+
+async def test_stored_session_skips_login(hass: HomeAssistant, mock_api) -> None:
+    """After a restart the saved session is reused, so no new 2FA code is needed."""
+    with patch(f"{API}.restore_session", return_value=True), patch(f"{API}.login") as login:
+        entry = await _setup(hass)
+    assert entry.state is ConfigEntryState.LOADED
+    login.assert_not_called()

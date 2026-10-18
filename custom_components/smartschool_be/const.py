@@ -4,6 +4,8 @@ DOMAIN = "smartschool_be"
 CONF_BASE_URL = "base_url"
 CONF_BIRTHDAY = "birthday"
 CONF_TOTP_SECRET = "totp_secret"
+# Form-only: a 6-digit authenticator code, used once and never stored.
+CONF_TOTP_CODE = "totp_code"
 DEFAULT_SCAN_INTERVAL_MINUTES = 15
 MESSAGES_SCAN_INTERVAL_MINUTES = 5
 AGENDA_SCAN_INTERVAL_MINUTES = 60

@@ -9,6 +9,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -42,6 +43,7 @@ class SmartschoolData:
     """Runtime data of one Smartschool account; a disabled module is None."""
 
     api: SmartschoolAPI
+    session_store: Store
     results: SmartschoolCoordinator | None
     messages: SmartschoolMessagesCoordinator | None
     agenda: SmartschoolAgendaCoordinator | None
@@ -79,9 +81,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: SmartschoolConfigEntry) 
         entry.data.get(CONF_TOTP_SECRET, ""),
     )
 
+    # Reuse the stored session so a school with 2FA does not need a new code
+    # after every restart; a fresh login happens only when it has expired.
+    session_store: Store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.session")
+    pending = hass.data.get(DOMAIN, {}).get("pending_sessions", {})
+    cookies = pending.pop(entry.unique_id, None)
+    if cookies is None:
+        cookies = ((await session_store.async_load()) or {}).get("cookies")
+    if cookies:
+        api.import_cookies(cookies)
+
     def _login() -> None:
         with api.lock:
-            api.login()
+            if not api.restore_session():
+                api.login()
 
     try:
         await hass.async_add_executor_job(_login)
@@ -121,7 +134,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: SmartschoolConfigEntry) 
 
     _remove_disabled_entities(hass, entry, agenda_on or planner_on)
 
-    entry.runtime_data = SmartschoolData(api=api, results=results, messages=messages, agenda=agenda)
+    await session_store.async_save({"cookies": api.export_cookies()})
+    for coordinator in (results, messages, agenda):
+        if coordinator is not None:
+            coordinator.session_store = session_store
+
+    entry.runtime_data = SmartschoolData(
+        api=api,
+        session_store=session_store,
+        results=results,
+        messages=messages,
+        agenda=agenda,
+    )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -153,6 +177,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: SmartschoolConfigEntry)
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        await hass.async_add_executor_job(entry.runtime_data.api.close)
+        data = entry.runtime_data
+        await data.session_store.async_save({"cookies": data.api.export_cookies()})
+        await hass.async_add_executor_job(data.api.close)
 
     return unload_ok

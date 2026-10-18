@@ -9,22 +9,26 @@
           "username": "Gebruikersnaam",
           "password": "Wachtwoord",
           "birthday": "Geboortedatum (JJJJ-MM-DD)",
-          "totp_secret": "2FA-sleutel (authenticator-app)"
+          "totp_secret": "2FA-sleutel (optioneel, geavanceerd)",
+          "totp_code": "2FA-code (6 cijfers uit je authenticator-app)"
         },
         "data_description": {
-          "totp_secret": "Alleen nodig als je school tweestapsverificatie vraagt. Dit is de geheime sleutel (bv. 'ABCD EFGH ...') die Smartschool toont bij het instellen van je authenticator-app, niet de 6-cijferige code."
+          "totp_secret": "Laat leeg als je de 6-cijferige code gebruikt. Met de geheime sleutel van je authenticator (niet de 6 cijfers) maakt Home Assistant zelf codes en hoef je nooit opnieuw een code in te geven.",
+          "totp_code": "Alleen nodig als je school tweestapsverificatie vraagt. Typ de code die nu in je app staat (bv. LastPass of Google Authenticator). Home Assistant bewaart daarna de sessie, zodat je niet telkens een code moet ingeven."
         }
       },
       "reauth_confirm": {
         "title": "Opnieuw aanmelden bij Smartschool",
-        "description": "Smartschool weigert de opgeslagen gegevens voor {username}, of vraagt tweestapsverificatie. Geef het wachtwoord, de geboortedatum en zo nodig de 2FA-sleutel in.",
+        "description": "Smartschool vraagt opnieuw een 2FA-code voor {username}, of weigert de opgeslagen gegevens. Meestal volstaat de 6-cijferige code uit je authenticator-app; laat het wachtwoord leeg om het bewaarde te gebruiken.",
         "data": {
-          "password": "Wachtwoord",
+          "password": "Wachtwoord (leeg = ongewijzigd)",
           "birthday": "Geboortedatum (JJJJ-MM-DD)",
-          "totp_secret": "2FA-sleutel (authenticator-app)"
+          "totp_secret": "2FA-sleutel (optioneel, geavanceerd)",
+          "totp_code": "2FA-code (6 cijfers uit je authenticator-app)"
         },
         "data_description": {
-          "totp_secret": "Alleen nodig als je school tweestapsverificatie vraagt. Dit is de geheime sleutel (bv. 'ABCD EFGH ...') die Smartschool toont bij het instellen van je authenticator-app, niet de 6-cijferige code."
+          "totp_secret": "Laat leeg als je de 6-cijferige code gebruikt. Met de geheime sleutel van je authenticator (niet de 6 cijfers) maakt Home Assistant zelf codes en hoef je nooit opnieuw een code in te geven.",
+          "totp_code": "Alleen nodig als je school tweestapsverificatie vraagt. Typ de code die nu in je app staat (bv. LastPass of Google Authenticator). Home Assistant bewaart daarna de sessie, zodat je niet telkens een code moet ingeven."
         }
       }
     },
@@ -35,9 +39,10 @@
       "invalid_birthday": "Ongeldige geboortedatum (gebruik formaat JJJJ-MM-DD, bv. 2010-03-15)",
       "unknown": "Onbekende fout",
       "invalid_totp_secret": "Ongeldige 2FA-sleutel: die bestaat uit minstens 16 tekens A-Z en 2-7 (een otpauth://-link mag ook). Let op O versus 0 en I versus 1.",
-      "totp_required": "Je school vraagt tweestapsverificatie: vul de 2FA-sleutel van je authenticator-app in.",
-      "totp_failed": "Smartschool weigerde de 2FA-code. Controleer de sleutel en of de klok van Home Assistant juist staat.",
-      "totp_looks_like_code": "Dit is de 6-cijferige code die elke 30 seconden verandert. Vul de geheime lettercode in die Smartschool toont bij het instellen van de authenticator-app."
+      "totp_required": "Je school vraagt tweestapsverificatie: vul de 6-cijferige code uit je authenticator-app in.",
+      "totp_failed": "Smartschool weigerde de code. Ze verandert elke 30 seconden: vul de code in die nu in je app staat en probeer opnieuw.",
+      "totp_looks_like_code": "Dit is de 6-cijferige code die elke 30 seconden verandert. Vul de geheime lettercode in die Smartschool toont bij het instellen van de authenticator-app.",
+      "invalid_totp_code": "Een 2FA-code bestaat uit precies 6 cijfers."
     },
     "abort": {
       "already_configured": "Deze account is al geconfigureerd",
