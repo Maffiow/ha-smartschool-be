@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 from custom_components.smartschool_be.const import (
@@ -23,6 +23,7 @@ from custom_components.smartschool_be.smartschool_api import (
     SmartschoolAuthError,
     SmartschoolConnectionError,
     SmartschoolError,
+    SmartschoolModuleUnavailable,
 )
 
 API = "custom_components.smartschool_be.smartschool_api.SmartschoolAPI"
@@ -60,7 +61,25 @@ EVALUATIONS = {
     "recent": [WISK_2, FRANS, WISK_1],
 }
 
-STUDENTS = [{"userID": 42, "fullName": "Jan Peeters", "class": "3A ", "titu": []}]
+STUDENTS = [
+    {
+        "userID": 42,
+        "fullName": "Jan Peeters",
+        "class": "3A ",
+        "photoUrl": "https://userpicture.example/jan",
+        "titu": [{"fullName": "Juf An"}],
+    }
+]
+COUNTERS = {"unread": 278, "total": 480}
+
+
+def _planner(*_args):
+    day = dt_util.now().date().isoformat()
+    return [
+        {"id": "p1", "kind": "task", "type": "Toets", "name": "Breuken", "course": "Wiskunde",
+         "location": None, "start": f"{day}T08:25:00+02:00", "end": f"{day}T09:15:00+02:00",
+         "whole_day": False, "deadline": True, "status": None},
+    ]
 
 
 def _msg(msg_id, unread=True, subject="Uitstap"):
@@ -114,7 +133,11 @@ def mock_api():
         f"{API}.get_messages", return_value=list(INBOX)
     ) as get_messages, patch(f"{API}.get_future_tasks", side_effect=_tasks), patch(
         f"{API}.get_hours", return_value=HOURS
-    ), patch(f"{API}.get_lessons", side_effect=_lessons):
+    ), patch(f"{API}.get_lessons", side_effect=_lessons), patch(
+        f"{API}.get_message_counters", return_value=COUNTERS
+    ), patch(f"{API}.get_student_planner_id", return_value="1_42_0"), patch(
+        f"{API}.get_planned_elements", side_effect=_planner
+    ):
         yield get_messages
 
 
@@ -144,12 +167,19 @@ async def test_setup_and_sensors(hass: HomeAssistant, mock_api) -> None:
     assert latest.state == "H2"
 
     unread = hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters")
-    assert unread.state == "1"
+    assert unread.state == "278"  # counters cover the whole inbox, not one page
+    assert unread.attributes["totaal_in_inbox"] == 480
     assert unread.attributes["berichten"][0]["id"] == 2
 
     tasks = hass.states.get("sensor.smartschool_komende_taken_jan_peeters")
-    assert tasks.state == "1"  # the task in the past is not counted
-    assert tasks.attributes["aantal_toetsen"] == 1
+    # agenda task + planner test; the task in the past is not counted
+    assert tasks.state == "2"
+    assert tasks.attributes["aantal_toetsen"] == 2
+
+    assert hass.states.get("sensor.jan_peeters_klas").state == "3A"
+    assert hass.states.get("sensor.jan_peeters_titularis").state == "Juf An"
+    info = hass.states.get("sensor.jan_peeters_info")
+    assert info.attributes["entity_picture"] == "https://userpicture.example/jan"
 
     with patch(f"{API}.close") as close:
         assert await hass.config_entries.async_unload(entry.entry_id)
@@ -170,8 +200,6 @@ async def test_new_message_event(hass: HomeAssistant, mock_api) -> None:
     assert len(events) == 1
     assert events[0].data["message_id"] == 3
     assert events[0].data["subject"] == "Oudercontact"
-    state = hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters")
-    assert state.state == "2"
 
 
 async def test_calendar(hass: HomeAssistant, mock_api) -> None:
@@ -191,6 +219,7 @@ async def test_calendar(hass: HomeAssistant, mock_api) -> None:
     summaries = {e["summary"] for e in events}
     assert "FR4" in summaries
     assert "Toets: AAR1" in summaries
+    assert "Toets: Wiskunde" in summaries  # from the planner
     lesson = next(e for e in events if e["summary"] == "FR4")
     assert lesson["location"] == "E.3.12"
     assert "08:25" in lesson["start"]
@@ -279,3 +308,50 @@ async def test_user_flow(hass: HomeAssistant) -> None:
         result = await hass.config_entries.flow.async_configure(result["flow_id"], DATA)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == DATA
+
+
+async def test_disabled_module_does_not_trigger_reauth(hass: HomeAssistant, mock_api) -> None:
+    """A module the school switched off (redirect to the homepage) is just empty."""
+    with patch(
+        f"{API}.get_future_tasks", side_effect=SmartschoolModuleUnavailable("uit")
+    ), patch(f"{API}.get_all_evaluations", side_effect=SmartschoolModuleUnavailable("403")):
+        entry = await _setup(hass)
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.config_entries.flow.async_progress() == []
+    assert entry.runtime_data.agenda.unavailable_modules == {"agenda"}
+    tasks = hass.states.get("sensor.smartschool_komende_taken_jan_peeters")
+    assert tasks.state == "1"  # the planner still works
+
+
+async def test_options_switch_modules_off(hass: HomeAssistant, mock_api) -> None:
+    entry = await _setup(hass)
+    assert hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters") is not None
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "enable_results": True,
+            "enable_messages": False,
+            "enable_agenda": False,
+            "enable_planner": False,
+            "enable_students": True,
+        },
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data.messages is None
+    assert entry.runtime_data.agenda is None
+    assert hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters") is None
+    assert hass.states.get("calendar.smartschool_agenda_jan_peeters") is None
+    assert hass.states.get("sensor.smartschool_frans_jan_peeters") is not None
+    assert hass.states.get("sensor.jan_peeters_klas") is not None
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "get_message", {"message_id": 2}, blocking=True, return_response=True
+        )

@@ -17,3 +17,12 @@ ATTR_SUBJECT = "subject"
 ATTR_REPLY_ALL = "reply_all"
 ATTR_RECIPIENT = "recipient"
 ATTR_FLAG = "flag"
+PLANNER_DAYS_AHEAD = 30
+
+# Options: which Smartschool modules to use (all on by default).
+CONF_RESULTS = "enable_results"
+CONF_MESSAGES = "enable_messages"
+CONF_AGENDA = "enable_agenda"
+CONF_PLANNER = "enable_planner"
+CONF_STUDENTS = "enable_students"
+MODULE_OPTIONS = (CONF_RESULTS, CONF_MESSAGES, CONF_AGENDA, CONF_PLANNER, CONF_STUDENTS)

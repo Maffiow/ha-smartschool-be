@@ -6,6 +6,7 @@ import pytest
 from custom_components.smartschool_be.smartschool_api import (
     SmartschoolAPI,
     SmartschoolError,
+    SmartschoolModuleUnavailable,
     html_to_text,
     text_to_html,
 )
@@ -156,3 +157,74 @@ def test_future_tasks_double_encoded_json(api):
 def test_text_html_roundtrip():
     assert text_to_html("a & b\nc\n\nd") == "<p>a &amp; b<br>c</p><p>d</p>"
     assert html_to_text("<p>a<br>b</p><p>c</p>") == "a\nb\n\nc"
+
+
+def test_redirect_to_homepage_is_module_unavailable(api):
+    """Smartschool sends a switched-off module to the homepage: no re-login, no reauth."""
+    home = _resp("<html>start</html>", url="https://s.smartschool.be/", ctype="text/html")
+    api._session.request.return_value = home
+    api._force_relogin = MagicMock()
+    with pytest.raises(SmartschoolModuleUnavailable):
+        api.get_future_tasks()
+    api._force_relogin.assert_not_called()
+
+
+def test_403_is_module_unavailable(api):
+    api._session.post.return_value = _resp("forbidden", ctype="text/html", status=403)
+    with pytest.raises(SmartschoolModuleUnavailable):
+        api.get_messages()
+
+
+def test_message_counters(api):
+    api._session.post.return_value = _resp(
+        '<?xml version="1.0"?><server><response><status>ok</status><actions><action><data><data>'
+        '<inbox>[{"subid":0,"unread":278,"total":480}]</inbox><outbox>[]</outbox>'
+        "</data></data></action></actions></response></server>"
+    )
+    assert api.get_message_counters() == {"unread": 278, "total": 480}
+
+
+def test_student_planner_id_from_escaped_page(api):
+    bs = chr(92)
+
+    def esc(text):
+        return "".join(bs + "u%04X" % ord(c) if c in '"{}:' else c for c in text)
+
+    page = "<script>x(JSON.parse('" + esc('{"authenticatedUser":{"id":"883_11659_2","name":"x"}}') + "'))</script>"
+    api._session.get.return_value = _resp(page, url="https://s.smartschool.be/", ctype="text/html")
+    assert api.get_student_planner_id() == "883_11659_0"
+
+
+def test_planned_elements(api):
+    from datetime import datetime, timezone
+
+    r = _resp("", ctype="application/json")
+    r.json.return_value = [
+        {
+            "id": "abc",
+            "name": "Breuken oefenen",
+            "plannedElementType": "planned-assignments",
+            "period": {"dateTimeFrom": "2026-10-20T08:25:00+02:00", "dateTimeTo": "2026-10-20T09:15:00+02:00",
+                       "wholeDay": False, "deadline": True},
+            "courses": [{"name": "Wiskunde"}],
+            "locations": [{"title": "Lokaal 3"}],
+            "assignmentType": {"name": "Toets"},
+        },
+        {
+            "id": "les",
+            "name": "",
+            "plannedElementType": "planned-lessons",
+            "period": {"dateTimeFrom": "2026-10-20T10:00:00+02:00", "dateTimeTo": "2026-10-20T10:50:00+02:00",
+                       "wholeDay": False, "deadline": False},
+            "courses": [{"name": "Frans"}],
+        },
+    ]
+    api._session.request.return_value = r
+    start = datetime(2026, 10, 19, tzinfo=timezone.utc)
+    items = api.get_planned_elements("1_2_0", start, start)
+    assert items[0]["kind"] == "task" and items[0]["type"] == "Toets"
+    assert items[0]["course"] == "Wiskunde" and items[0]["location"] == "Lokaal 3"
+    assert items[1]["kind"] == "lesson" and items[1]["course"] == "Frans"
+    params = api._session.request.call_args.kwargs["params"]
+    assert "planned-assignments" in params["types"]
+    assert api._session.request.call_args.args[1].endswith("/planner/api/v1/planned-elements/user/1_2_0")

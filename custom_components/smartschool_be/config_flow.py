@@ -10,8 +10,9 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 
-from .const import CONF_BASE_URL, CONF_BIRTHDAY, DOMAIN
+from .const import CONF_BASE_URL, CONF_BIRTHDAY, DOMAIN, MODULE_OPTIONS
 from .smartschool_api import SmartschoolAPI, SmartschoolAuthError, SmartschoolBirthdayError
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,6 +24,12 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Smartschool BE."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+        """Let the user pick which Smartschool modules to use."""
+        return SmartschoolOptionsFlow()
 
     async def _async_validate(
         self, base_url: str, username: str, password: str, birthday: str
@@ -134,3 +141,17 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={"username": entry.data[CONF_USERNAME]},
         )
+
+
+class SmartschoolOptionsFlow(config_entries.OptionsFlow):
+    """Switch Smartschool modules on or off."""
+
+    async def async_step_init(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        options = self.config_entry.options
+        schema = vol.Schema(
+            {vol.Required(option, default=options.get(option, True)): bool for option in MODULE_OPTIONS}
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

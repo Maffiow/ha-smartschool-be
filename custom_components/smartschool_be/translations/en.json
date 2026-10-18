@@ -173,6 +173,31 @@
     },
     "multiple_entries": {
       "message": "Several Smartschool accounts are set up; pick one with config_entry_id."
+    },
+    "messages_disabled": {
+      "message": "Messages are switched off in the integration options."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modules",
+        "description": "Choose which parts of Smartschool to use. A part your school switched off simply stays empty.",
+        "data": {
+          "enable_results": "Results (grades per course)",
+          "enable_messages": "Messages",
+          "enable_agenda": "Agenda and tasks (classic agenda)",
+          "enable_planner": "Planner",
+          "enable_students": "Children info (name, class, class teacher, photo)"
+        },
+        "data_description": {
+          "enable_results": "Sensor per course and latest result.",
+          "enable_messages": "Unread counter, new-message event and the message actions.",
+          "enable_agenda": "Lessons and tasks from the classic Smartschool agenda.",
+          "enable_planner": "Lessons, assignments and to-dos from the new Planner.",
+          "enable_students": "One device per child with class, class teacher and photo."
+        }
+      }
     }
   }
 }

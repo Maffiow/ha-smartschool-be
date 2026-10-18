@@ -89,6 +89,10 @@ class SmartschoolBirthdayError(SmartschoolAuthError):
     """Wrong or missing birthday during account verification."""
 
 
+class SmartschoolModuleUnavailable(SmartschoolError):
+    """The school (or this account) has this Smartschool module switched off."""
+
+
 class SmartschoolAPI:
     """Client for Smartschool."""
 
@@ -345,6 +349,8 @@ class SmartschoolAPI:
         }
         url = f"{self._evaluations_api}?pageNumber={page}&itemsOnPage={items}"
         resp = self._session.get(url, timeout=20, allow_redirects=True, headers=headers)
+        if resp.status_code == 403:
+            raise SmartschoolModuleUnavailable("Resultaten zijn niet actief voor dit account")
         resp.raise_for_status()
 
         ctype = (resp.headers.get("Content-Type") or "").lower()
@@ -400,6 +406,8 @@ class SmartschoolAPI:
         while True:
             try:
                 batch = self._fetch_evaluations_page(page=page, items=items_per_page)
+            except SmartschoolModuleUnavailable:
+                raise
             except Exception as err:
                 _LOGGER.debug("API page %d fetch failed: %s", page, err)
                 break
@@ -435,6 +443,9 @@ class SmartschoolAPI:
 
         try:
             raw = self._fetch_all_evaluations()
+        except SmartschoolModuleUnavailable:
+            # No re-login: the module is simply off for this account.
+            raise
         except Exception as err:
             _LOGGER.debug("API fetch failed: %s", err)
 
@@ -572,15 +583,19 @@ class SmartschoolAPI:
                 try:
                     return func(*args, **kwargs)
                 except _SessionExpired as err:
-                    raise SmartschoolAuthError("Sessie verloren na opnieuw aanmelden") from err
+                    # Login itself succeeded, so the credentials are fine: never trigger reauth here.
+                    raise SmartschoolConnectionError("Sessie verloren na opnieuw aanmelden") from err
             except requests.exceptions.RequestException as err:
                 raise SmartschoolConnectionError(str(err)) from err
 
     def _check_session(self, response: requests.Response) -> None:
+        """Raise _SessionExpired for a login page, ModuleUnavailable for a 403."""
         if self._is_account_verification_page(response) or (
             "/login" in (response.url or "")
         ):
             raise _SessionExpired
+        if response.status_code == 403:
+            raise SmartschoolModuleUnavailable(f"Geen toegang (403): {response.url}")
 
     def _xml_command(self, path: str, subsystem: str, action: str, params: dict) -> ET.Element:
         """POST a Smartschool XML dispatcher command and return the parsed root."""
@@ -596,15 +611,16 @@ class SmartschoolAPI:
             headers={"X-Requested-With": "XMLHttpRequest"},
             timeout=20,
         )
-        resp.raise_for_status()
         self._check_session(resp)
+        resp.raise_for_status()
 
         text = (resp.text or "").strip()
         if not text:
             return ET.Element("server")
         if not text.startswith("<?xml") and not text.startswith("<server"):
-            # An HTML page instead of XML means we were bounced to a login page.
-            raise _SessionExpired
+            # Not a login page (checked above): Smartschool redirects to the
+            # homepage when this module is switched off for the account.
+            raise SmartschoolModuleUnavailable(f"{subsystem}/{action} is niet beschikbaar")
         root = ET.fromstring(text)
         if root.findtext(".//status") == "error":
             raise SmartschoolError(root.findtext(".//message") or "Onbekende fout")
@@ -618,10 +634,10 @@ class SmartschoolAPI:
             timeout=20,
             **kwargs,
         )
-        resp.raise_for_status()
         self._check_session(resp)
+        resp.raise_for_status()
         if "json" not in (resp.headers.get("Content-Type") or "").lower():
-            raise _SessionExpired
+            raise SmartschoolModuleUnavailable(f"{path} is niet beschikbaar")
         data = resp.json()
         # Some endpoints answer with a JSON-encoded string.
         if isinstance(data, str):
@@ -761,7 +777,7 @@ class SmartschoolAPI:
             try:
                 success = resp.json().get("success") or []
             except ValueError as err:
-                raise _SessionExpired from err
+                raise SmartschoolError(f"Archiveren van bericht {msg_id} mislukt") from err
             if int(msg_id) not in [int(x) for x in success]:
                 raise SmartschoolError(f"Archiveren van bericht {msg_id} mislukt")
 
@@ -777,8 +793,8 @@ class SmartschoolAPI:
 
     def _load_compose_form(self, url: str) -> tuple[dict, str]:
         resp = self._session.get(url, timeout=20)
-        resp.raise_for_status()
         self._check_session(resp)
+        resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         hidden = {
             str(inp["name"]): str(inp.get("value", ""))
@@ -883,8 +899,8 @@ class SmartschoolAPI:
             },
             timeout=20,
         )
-        resp.raise_for_status()
         self._check_session(resp)
+        resp.raise_for_status()
         root = ET.fromstring((resp.text or "<results/>").strip())
         users = []
         for user in root.findall("./users/user"):
@@ -1036,3 +1052,93 @@ class SmartschoolAPI:
                 )
             cursor = chunk_end + timedelta(days=1)
         return lessons
+
+    # ------------------------------------------------------------------
+    # Account identity, message counters and planner
+    # ------------------------------------------------------------------
+
+    _AUTH_USER_RE = re.compile(r'"authenticatedUser"\s*:\s*\{[^{}]*?"id"\s*:\s*"([^"]+)"')
+
+    def get_student_planner_id(self) -> str:
+        """Planner id of the student this login belongs to.
+
+        The page config holds the logged-in account as
+        ``<platform>_<user>_<coaccount>``; a parent (co-account) sees the
+        student's planner under co-account index 0.
+        """
+
+        def _fetch():
+            resp = self._session.get(f"{self._base_url}/", timeout=20)
+            self._check_session(resp)
+            resp.raise_for_status()
+            # The page config is embedded as JSON.parse('...') with \uXXXX escapes.
+            text = re.sub(
+                r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), resp.text or ""
+            ).replace('\\"', '"')
+            match = self._AUTH_USER_RE.search(text)
+            if not match:
+                raise SmartschoolModuleUnavailable("Gebruikers-id niet gevonden op de startpagina")
+            return re.sub(r"_\d+$", "_0", match.group(1))
+
+        return self._with_relogin(_fetch)
+
+    def get_message_counters(self) -> dict:
+        """Return {"unread": n, "total": n} for the inbox (all messages, not just one page)."""
+
+        def _fetch():
+            root = self._xml_command(
+                _MESSAGES_DISPATCHER, "postboxes", "calculate_postbox_counters", {}
+            )
+            raw = root.findtext(".//data/data/inbox") or root.findtext(".//inbox") or "[]"
+            boxes = json.loads(raw) if raw.strip() else []
+            return {
+                "unread": sum(int(b.get("unread") or 0) for b in boxes),
+                "total": sum(int(b.get("total") or 0) for b in boxes),
+            }
+
+        return self._with_relogin(_fetch)
+
+    def get_planned_elements(self, planner_id: str, start: datetime, end: datetime) -> list[dict]:
+        """Return planner items (lessons, assignments, to-dos) between start and end."""
+
+        def _fetch():
+            data = self._get_json(
+                f"/planner/api/v1/planned-elements/user/{planner_id}",
+                params={
+                    "from": start.isoformat(timespec="seconds"),
+                    "to": end.isoformat(timespec="seconds"),
+                    "types": "planned-lessons,planned-assignments,planned-to-dos,"
+                    "planned-lesson-cluster-assignments",
+                    "includes": "icon,courses,locations",
+                },
+            )
+            items = []
+            for raw in data or []:
+                period = raw.get("period") or {}
+                courses = [c.get("name") for c in raw.get("courses") or [] if c.get("name")]
+                locations = [
+                    loc.get("title") or loc.get("number")
+                    for loc in raw.get("locations") or []
+                    if loc.get("title") or loc.get("number")
+                ]
+                element_type = raw.get("plannedElementType") or ""
+                assignment = raw.get("assignmentType") or {}
+                items.append(
+                    {
+                        "id": raw.get("id"),
+                        "kind": "lesson" if element_type.endswith("lessons") else "task",
+                        "type": assignment.get("name")
+                        or ("To-do" if element_type.endswith("to-dos") else "Opdracht"),
+                        "name": raw.get("name") or "",
+                        "course": ", ".join(courses) or None,
+                        "location": ", ".join(locations) or None,
+                        "start": period.get("dateTimeFrom"),
+                        "end": period.get("dateTimeTo"),
+                        "whole_day": bool(period.get("wholeDay")),
+                        "deadline": bool(period.get("deadline")),
+                        "status": raw.get("resolvedStatus") or None,
+                    }
+                )
+            return items
+
+        return self._with_relogin(_fetch)

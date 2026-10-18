@@ -173,6 +173,31 @@
     },
     "multiple_entries": {
       "message": "Er zijn meerdere Smartschool-accounts; kies er een met config_entry_id."
+    },
+    "messages_disabled": {
+      "message": "Berichten staan uit in de opties van de integratie."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modules",
+        "description": "Kies welke onderdelen van Smartschool gebruikt worden. Staat een onderdeel uit bij je school, dan blijft het gewoon leeg.",
+        "data": {
+          "enable_results": "Resultaten (punten per vak)",
+          "enable_messages": "Berichten",
+          "enable_agenda": "Agenda en taken (klassieke agenda)",
+          "enable_planner": "Planner",
+          "enable_students": "Info van de kinderen (naam, klas, titularis, foto)"
+        },
+        "data_description": {
+          "enable_results": "Sensor per vak en laatste resultaat.",
+          "enable_messages": "Teller van ongelezen berichten, event bij een nieuw bericht en de berichtacties.",
+          "enable_agenda": "Lessen en taken uit de klassieke Smartschool-agenda.",
+          "enable_planner": "Lessen, opdrachten en to-do's uit de nieuwe Planner.",
+          "enable_students": "Een apparaat per kind met klas, titularis en foto."
+        }
+      }
     }
   }
 }

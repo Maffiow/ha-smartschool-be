@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Any
+from typing import Any, TypeVar
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -19,12 +20,19 @@ from .const import (
     DOMAIN,
     EVENT_NEW_MESSAGE,
     MESSAGES_SCAN_INTERVAL_MINUTES,
+    PLANNER_DAYS_AHEAD,
 )
-from .smartschool_api import SmartschoolAPI, SmartschoolAuthError, SmartschoolError
+from .smartschool_api import (
+    SmartschoolAPI,
+    SmartschoolAuthError,
+    SmartschoolError,
+    SmartschoolModuleUnavailable,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 _MAX_SEEN_IDS = 500
+_T = TypeVar("_T")
 
 
 class _SmartschoolBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -46,6 +54,19 @@ class _SmartschoolBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(minutes=interval_minutes),
         )
         self.api = api
+        self.unavailable_modules: set[str] = set()
+
+    def _optional(self, module: str, func: Callable[..., _T], *args: Any, default: _T) -> _T:
+        """Call func; a module the school switched off just yields `default`."""
+        try:
+            result = func(*args)
+        except SmartschoolModuleUnavailable as err:
+            if module not in self.unavailable_modules:
+                _LOGGER.info("Smartschool module '%s' is not available for this account: %s", module, err)
+            self.unavailable_modules.add(module)
+            return default
+        self.unavailable_modules.discard(module)
+        return result
 
     def _fetch(self) -> dict[str, Any]:
         raise NotImplementedError
@@ -66,14 +87,32 @@ class _SmartschoolBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 
 class SmartschoolCoordinator(_SmartschoolBaseCoordinator):
-    """Fetch evaluations and students from Smartschool."""
+    """Fetch evaluations and/or students from Smartschool."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, api: SmartschoolAPI) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        api: SmartschoolAPI,
+        *,
+        results: bool = True,
+        students: bool = True,
+    ) -> None:
         super().__init__(hass, entry, api, "results", DEFAULT_SCAN_INTERVAL_MINUTES)
+        self.include_results = results
+        self.include_students = students
 
     def _fetch(self) -> dict[str, Any]:
-        evaluations = self.api.get_all_evaluations()
-        students = self.api.get_students()
+        evaluations = (
+            self._optional("results", self.api.get_all_evaluations, default=None)
+            if self.include_results
+            else None
+        )
+        students = (
+            self._optional("students", self.api.get_students, default=[])
+            if self.include_students
+            else []
+        )
         return {
             "evaluations": evaluations or {},
             "students": students or [],
@@ -91,7 +130,10 @@ class SmartschoolMessagesCoordinator(_SmartschoolBaseCoordinator):
         self._seen_ids: set[int] | None = None
 
     def _fetch(self) -> dict[str, Any]:
-        return {"inbox": self.api.get_messages("inbox")}
+        inbox = self.api.get_messages("inbox")
+        # The message list holds one page only; the counters cover the whole inbox.
+        counters = self._optional("message_counters", self.api.get_message_counters, default=None)
+        return {"inbox": inbox, "counters": counters}
 
     async def _async_update_data(self) -> dict[str, Any]:
         data = await super()._async_update_data()
@@ -137,15 +179,62 @@ class SmartschoolMessagesCoordinator(_SmartschoolBaseCoordinator):
 
 
 class SmartschoolAgendaCoordinator(_SmartschoolBaseCoordinator):
-    """Fetch upcoming tasks/tests and the lessons of the coming days."""
+    """Fetch the classic agenda (tasks, lessons) and/or the planner."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, api: SmartschoolAPI) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        api: SmartschoolAPI,
+        *,
+        agenda: bool = True,
+        planner: bool = True,
+    ) -> None:
         super().__init__(hass, entry, api, "agenda", AGENDA_SCAN_INTERVAL_MINUTES)
+        self.include_agenda = agenda
+        self.include_planner = planner
+        self._planner_id: str | None = None
+
+    def planner_id(self) -> str:
+        """Planner id of the student (looked up once, runs in the executor)."""
+        if self._planner_id is None:
+            self._planner_id = self.api.get_student_planner_id()
+        return self._planner_id
+
+    def _planner(self, start, end) -> list[dict]:
+        """Planner items from the start of `start` to the end of `end` (dates)."""
+        start_dt = dt_util.start_of_local_day(start)
+        end_dt = dt_util.start_of_local_day(end + timedelta(days=1))
+        return self._optional(
+            "planner",
+            lambda: self.api.get_planned_elements(self.planner_id(), start_dt, end_dt),
+            default=[],
+        )
+
+    def fetch_range(self, start, end) -> dict[str, Any]:
+        """Lessons and planner items for a date range (runs in the executor)."""
+        with self.api.lock:
+            return {
+                "lessons": self._optional("agenda", self.api.get_lessons, start, end, default=[])
+                if self.include_agenda
+                else [],
+                "planner": self._planner(start, end) if self.include_planner else [],
+            }
 
     def _fetch(self) -> dict[str, Any]:
         today = dt_util.now().date()
-        return {
-            "tasks": self.api.get_future_tasks(),
-            "hours": self.api.get_hours(),
-            "lessons": self.api.get_lessons(today, today + timedelta(days=AGENDA_DAYS_AHEAD)),
-        }
+        data: dict[str, Any] = {"tasks": [], "hours": {}, "lessons": [], "planner": []}
+
+        if self.include_agenda:
+            data["tasks"] = self._optional("agenda", self.api.get_future_tasks, default=[])
+            data["hours"] = self._optional("agenda", self.api.get_hours, default={})
+            data["lessons"] = self._optional(
+                "agenda",
+                self.api.get_lessons,
+                today,
+                today + timedelta(days=AGENDA_DAYS_AHEAD),
+                default=[],
+            )
+        if self.include_planner:
+            data["planner"] = self._planner(today, today + timedelta(days=PLANNER_DAYS_AHEAD))
+        return data

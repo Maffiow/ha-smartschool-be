@@ -29,6 +29,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Smartschool calendar."""
+    if config_entry.runtime_data.agenda is None:
+        return
     entity = SmartschoolCalendar(
         config_entry.runtime_data.agenda,
         config_entry.data[CONF_USERNAME],
@@ -91,6 +93,28 @@ def task_to_event(task: dict) -> CalendarEvent | None:
     )
 
 
+def planner_to_event(item: dict) -> CalendarEvent | None:
+    start = dt_util.parse_datetime(item.get("start") or "")
+    end = dt_util.parse_datetime(item.get("end") or "") or start
+    if start is None:
+        return None
+    summary = item.get("course") or item.get("name") or "Planner"
+    if item.get("kind") == "task":
+        summary = f"{item.get('type') or 'Taak'}: {item.get('course') or item.get('name') or ''}".strip(": ")
+    description = item.get("name") if item.get("name") and item.get("name") != summary else None
+    common = {
+        "summary": summary,
+        "description": description,
+        "location": item.get("location"),
+        "uid": f"planner-{item.get('id')}",
+    }
+    if item.get("whole_day") or item.get("deadline") or end <= start:
+        day = dt_util.as_local(start).date()
+        last = max(dt_util.as_local(end).date(), day)
+        return CalendarEvent(start=day, end=last + timedelta(days=1), **common)
+    return CalendarEvent(start=dt_util.as_local(start), end=dt_util.as_local(end), **common)
+
+
 class SmartschoolCalendar(CoordinatorEntity[SmartschoolAgendaCoordinator], CalendarEntity):
     """Lessons (timed) and tasks/tests (all-day) of the account."""
 
@@ -108,6 +132,7 @@ class SmartschoolCalendar(CoordinatorEntity[SmartschoolAgendaCoordinator], Calen
         hours = data.get("hours") or {}
         events = [lesson_to_event(lesson, hours) for lesson in data.get("lessons") or []]
         events += [task_to_event(task) for task in data.get("tasks") or []]
+        events += [planner_to_event(item) for item in data.get("planner") or []]
         return [e for e in events if e is not None]
 
     @property
@@ -128,15 +153,16 @@ class SmartschoolCalendar(CoordinatorEntity[SmartschoolAgendaCoordinator], Calen
         )
 
         try:
-            lessons = await hass.async_add_executor_job(
-                self.coordinator.api.get_lessons, start_day, end_day
+            fetched = await hass.async_add_executor_job(
+                self.coordinator.fetch_range, start_day, end_day
             )
         except SmartschoolError as err:
-            _LOGGER.debug("Could not fetch lessons for %s - %s: %s", start_day, end_day, err)
-            lessons = data.get("lessons") or []
+            _LOGGER.debug("Could not fetch agenda for %s - %s: %s", start_day, end_day, err)
+            fetched = {"lessons": data.get("lessons") or [], "planner": data.get("planner") or []}
 
-        events = [lesson_to_event(lesson, hours) for lesson in lessons]
+        events = [lesson_to_event(lesson, hours) for lesson in fetched["lessons"]]
         events += [task_to_event(task) for task in data.get("tasks") or []]
+        events += [planner_to_event(item) for item in fetched["planner"]]
         return [
             e
             for e in events

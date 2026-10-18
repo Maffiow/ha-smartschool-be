@@ -73,7 +73,12 @@ def _get_data(hass: HomeAssistant, call: ServiceCall) -> SmartschoolData:
         raise ServiceValidationError(
             translation_domain=DOMAIN, translation_key="multiple_entries"
         )
-    return entries[0].runtime_data
+    data = entries[0].runtime_data
+    if data.messages is None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="messages_disabled"
+        )
+    return data
 
 
 async def _run(hass: HomeAssistant, func: Callable[..., Any], *args: Any) -> Any:

@@ -126,41 +126,41 @@ async def async_setup_entry(
 
         async_add_entities(
             [
-                SmartschoolStudentInfoSensor(
-                    coordinator,
-                    student,
-                    base_url,
-                    config_entry.entry_id,
-                )
+                sensor_cls(coordinator, student, base_url, config_entry.entry_id)
                 for student in new_students
+                for sensor_cls in (
+                    SmartschoolStudentInfoSensor,
+                    SmartschoolStudentClassSensor,
+                    SmartschoolStudentTitularSensor,
+                )
             ]
         )
 
-    config_entry.async_on_unload(coordinator.async_add_listener(_add_new_course_sensors))
-    config_entry.async_on_unload(coordinator.async_add_listener(_add_new_student_sensors))
+    runtime = config_entry.runtime_data
+    static: list[SensorEntity] = []
 
-    async_add_entities(
-        _with_device([
-            SmartschoolLatestResultSensor(
-                coordinator,
-                username,
-                config_entry.entry_id,
-            ),
-            SmartschoolUnreadMessagesSensor(
-                config_entry.runtime_data.messages,
-                username,
-                config_entry.entry_id,
-            ),
-            SmartschoolUpcomingTasksSensor(
-                config_entry.runtime_data.agenda,
-                username,
-                config_entry.entry_id,
-            ),
-        ])
-    )
+    if coordinator is not None:
+        if coordinator.include_results:
+            config_entry.async_on_unload(coordinator.async_add_listener(_add_new_course_sensors))
+            static.append(SmartschoolLatestResultSensor(coordinator, username, config_entry.entry_id))
+        if coordinator.include_students:
+            config_entry.async_on_unload(coordinator.async_add_listener(_add_new_student_sensors))
+    if runtime.messages is not None:
+        static.append(
+            SmartschoolUnreadMessagesSensor(runtime.messages, username, config_entry.entry_id)
+        )
+    if runtime.agenda is not None:
+        static.append(
+            SmartschoolUpcomingTasksSensor(runtime.agenda, username, config_entry.entry_id)
+        )
 
-    _add_new_course_sensors()
-    _add_new_student_sensors()
+    async_add_entities(_with_device(static))
+
+    if coordinator is not None:
+        if coordinator.include_results:
+            _add_new_course_sensors()
+        if coordinator.include_students:
+            _add_new_student_sensors()
 
 
 class SmartschoolLatestResultSensor(CoordinatorEntity, SensorEntity):
@@ -325,6 +325,11 @@ class SmartschoolStudentInfoSensor(CoordinatorEntity, SensorEntity):
         return {}
 
     @property
+    def entity_picture(self) -> str | None:
+        """Show the student's Smartschool photo."""
+        return self._get_student().get("photoUrl") or None
+
+    @property
     def native_value(self):
         """Return the student name as state."""
         student = self._get_student()
@@ -394,6 +399,9 @@ class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> int:
+        counters = (self.coordinator.data or {}).get("counters")
+        if counters is not None:
+            return counters["unread"]
         return sum(1 for m in self._inbox() if m["unread"])
 
     @property
@@ -403,8 +411,9 @@ class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         inbox = self._inbox()
+        counters = (self.coordinator.data or {}).get("counters") or {}
         return {
-            "totaal_in_inbox": len(inbox),
+            "totaal_in_inbox": counters.get("total", len(inbox)),
             "berichten": [
                 {
                     "id": m["id"],
@@ -436,7 +445,18 @@ class SmartschoolUpcomingTasksSensor(CoordinatorEntity, SensorEntity):
 
     def _tasks(self) -> list[dict]:
         today = dt_util.now().date().isoformat()
-        tasks = (self.coordinator.data or {}).get("tasks") or []
+        data = self.coordinator.data or {}
+        tasks = list(data.get("tasks") or [])
+        tasks += [
+            {
+                "date": (item.get("start") or "")[:10],
+                "type": item.get("type"),
+                "description": item.get("name"),
+                "course": item.get("course"),
+            }
+            for item in data.get("planner") or []
+            if item.get("kind") == "task"
+        ]
         return sorted(
             (t for t in tasks if (t.get("date") or "") >= today),
             key=lambda t: t.get("date") or "",
@@ -466,3 +486,58 @@ class SmartschoolUpcomingTasksSensor(CoordinatorEntity, SensorEntity):
                 for t in tasks
             ],
         }
+
+
+class SmartschoolStudentClassSensor(SmartschoolStudentInfoSensor):
+    """Class (klas) of a student."""
+
+    _attr_icon = "mdi:google-classroom"
+    _attr_entity_category = None
+
+    @property
+    def entity_picture(self) -> str | None:
+        return None
+
+    def __init__(self, coordinator, student, base_url, entry_id) -> None:
+        super().__init__(coordinator, student, base_url, entry_id)
+        self._attr_name = f"{_student_name(student)} Klas"
+        self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_class"
+
+    @property
+    def native_value(self):
+        return (self._get_student().get("class") or "").strip() or None
+
+    @property
+    def extra_state_attributes(self):
+        return None
+
+
+class SmartschoolStudentTitularSensor(SmartschoolStudentInfoSensor):
+    """Titularis (class teacher) of a student."""
+
+    _attr_icon = "mdi:human-male-board"
+    _attr_entity_category = None
+
+    @property
+    def entity_picture(self) -> str | None:
+        return None
+
+    def __init__(self, coordinator, student, base_url, entry_id) -> None:
+        super().__init__(coordinator, student, base_url, entry_id)
+        self._attr_name = f"{_student_name(student)} Titularis"
+        self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_titular"
+
+    def _titulars(self) -> list[str]:
+        return [
+            name
+            for teacher in self._get_student().get("titu") or []
+            if (name := _teacher_name(teacher))
+        ]
+
+    @property
+    def native_value(self):
+        return ", ".join(self._titulars()) or None
+
+    @property
+    def extra_state_attributes(self):
+        return {"titularissen": self._titulars()}

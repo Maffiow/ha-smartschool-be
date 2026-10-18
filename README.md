@@ -15,7 +15,9 @@ Een onofficiële Home Assistant custom integratie om toetsresultaten en leerling
 - **Gemiddelde score** per vak over het volledige schooljaar
 - **Laatste 5 resultaten** (alle vakken) op de overzichtssensor
 - **Berichten** — teller van ongelezen berichten, een event bij elk nieuw bericht, en acties om berichten te lezen, beantwoorden, versturen, markeren, archiveren of te verwijderen
-- **Agenda** — kalender met lessen (uur, lokaal, leerkracht) en taken/toetsen, plus een sensor met komende taken
+- **Agenda en Planner** — kalender met lessen en taken/toetsen uit de klassieke agenda én de nieuwe Planner, plus een sensor met komende taken
+- **Info van de kinderen** — een apparaat per kind met naam, klas, titularis en foto
+- **Modules aan/uit** — kies in de opties welke onderdelen je gebruikt
 - **Diagnostics** — downloadbaar via de integratiepagina, zonder namen, punten of berichtinhoud
 - Grafiekklaar voor [ApexCharts Card](https://github.com/RomRider/apexcharts-card) — kleuren per drempelwaarde (rood/geel/groen)
 - Automatische herauthenticatie bij verlopen sessie
@@ -61,6 +63,28 @@ Nieuwe versies verschijnen automatisch als update in HACS (en onder **Instelling
 | **Geboortedatum** | Geboortedatum van de leerling (JJJJ-MM-DD) | `2010-03-15` |
 
 > De geboortedatum is nodig omdat Smartschool bij elke nieuwe sessie een verificatiestap uitvoert. Dit is geen 2FA maar een vaste beveiligingsvraag van het platform.
+
+## Modules kiezen
+
+Via **Instellingen → Apparaten & diensten → Smartschool BE → Configureren** zet je onderdelen aan of uit:
+
+| Optie | Wat je krijgt |
+|:------|:--------------|
+| Resultaten | Sensor per vak en het laatste resultaat |
+| Berichten | Teller van ongelezen berichten, event bij een nieuw bericht, berichtacties |
+| Agenda en taken | Lessen en taken uit de klassieke Smartschool-agenda |
+| Planner | Lessen, opdrachten en to-do's uit de nieuwe Planner |
+| Info van de kinderen | Apparaat per kind met klas, titularis en foto |
+
+Alles staat standaard aan. Zet je een onderdeel uit, dan worden de bijhorende entiteiten verwijderd. Heeft je school een onderdeel uitgeschakeld (bv. geen Resultaten in een lagere school), dan blijft het gewoon leeg; dat geeft geen foutmelding en geen vraag om opnieuw aan te melden. In de diagnostics zie je welke onderdelen je school niet aanbiedt.
+
+## Info van de kinderen
+
+Per kind maakt de integratie een apparaat met:
+
+- `sensor.<naam>_klas` — de klas
+- `sensor.<naam>_titularis` — de titularis(sen)
+- `sensor.<naam>_info` — naam (met foto), plus attributen zoals klas, titularissen en account-id's
 
 ## Beschikbare sensoren
 
@@ -116,11 +140,11 @@ De sensorwaarde (state) is de meest recente numerieke score (in %). Heeft de laa
 
 ### Sensor
 
-`sensor.smartschool_ongelezen_berichten_<gebruikersnaam>` — aantal ongelezen berichten in de inbox (elke 5 minuten bijgewerkt).
+`sensor.smartschool_ongelezen_berichten_<gebruikersnaam>` — aantal ongelezen berichten in de hele inbox, hetzelfde getal als het bolletje in Smartschool (elke 5 minuten bijgewerkt).
 
 | Attribuut | Beschrijving |
 |:----------|:-------------|
-| `totaal_in_inbox` | Aantal berichten in de inbox |
+| `totaal_in_inbox` | Totaal aantal berichten in de inbox |
 | `berichten` | De 15 nieuwste berichten: `id`, `van`, `onderwerp`, `datum`, `ongelezen`, `bijlagen`, `vlag` |
 
 ### Event bij een nieuw bericht
@@ -173,7 +197,7 @@ data:
 
 ## Agenda
 
-- `calendar.smartschool_agenda_<gebruikersnaam>` — lessen met begin- en einduur, lokaal, leerkracht en lesonderwerp, plus taken en toetsen als hele-dag-items. Werkt met de kalenderkaart en kalender-automatiseringen.
+- `calendar.smartschool_agenda_<gebruikersnaam>` — lessen met begin- en einduur, lokaal, leerkracht en lesonderwerp, plus taken en toetsen. Komt uit de klassieke agenda en/of de Planner (voor een ouderaccount: de planner van het kind). Werkt met de kalenderkaart en kalender-automatiseringen.
 - `sensor.smartschool_komende_taken_<gebruikersnaam>` — aantal komende taken en toetsen, met attributen `volgende_datum`, `aantal_toetsen`, `volgende_toets` en de lijst `taken`.
 
 De agenda wordt elk uur bijgewerkt; de kalenderweergave haalt lessen op voor de periode die je bekijkt.
