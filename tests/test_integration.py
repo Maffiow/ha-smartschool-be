@@ -412,7 +412,13 @@ async def test_reauth_with_only_a_code(hass: HomeAssistant, mock_api) -> None:
 
 async def test_stored_session_skips_login(hass: HomeAssistant, mock_api) -> None:
     """After a restart the saved session is reused, so no new 2FA code is needed."""
-    with patch(f"{API}.restore_session", return_value=True), patch(f"{API}.login") as login:
+    def restored(api):
+        api._is_logged_in = True  # what the real restore_session does
+        return True
+
+    with patch(f"{API}.restore_session", autospec=True, side_effect=restored), patch(
+        f"{API}.login", autospec=True, side_effect=lambda api: None
+    ) as login:
         entry = await _setup(hass)
     assert entry.state is ConfigEntryState.LOADED
     login.assert_not_called()
