@@ -111,6 +111,7 @@ class SmartschoolAPI:
         # Coordinators and actions run in executor threads; serialize all
         # calls so they never race on the shared login session.
         self.lock = threading.RLock()
+        self._warmed_modules: set[str] = set()
 
         self._session.headers.update(
             {
@@ -319,6 +320,7 @@ class SmartschoolAPI:
         """Reset session and re-authenticate."""
         _LOGGER.debug("Forcing re-login (session likely expired)")
         self._is_logged_in = False
+        self._warmed_modules = set()
         self._session.close()
         self._session = requests.Session()
         self._session.headers.update(
@@ -597,8 +599,49 @@ class SmartschoolAPI:
         if response.status_code == 403:
             raise SmartschoolModuleUnavailable(f"Geen toegang (403): {response.url}")
 
+    @staticmethod
+    def _describe(resp: requests.Response) -> str:
+        """Short, non-personal description of an unexpected answer (for logs)."""
+        url = resp.url if isinstance(resp.url, str) else ""
+        path = url.split("?", 1)[0].split("/", 3)[-1] if url.count("/") >= 3 else ""
+        ctype = str(resp.headers.get("Content-Type") or "").split(";", 1)[0]
+        text = resp.text if isinstance(resp.text, str) else ""
+        title = ""
+        match = re.search(r"<title>([^<]{0,80})", text, re.IGNORECASE)
+        if match:
+            title = f", titel '{match.group(1).strip()}'"
+        return f"HTTP {resp.status_code}, /{path}, {ctype or 'geen type'}{title}"
+
+    def _ajax_headers(self, module: str | None = None) -> dict[str, str]:
+        referer = f"{self._base_url}/?module={module}&file=index" if module else f"{self._base_url}/"
+        return {
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": self._base_url,
+            "Referer": referer,
+        }
+
+    def _warm_module(self, module: str) -> None:
+        """Open a module page once per session, as a browser does before its XHR calls."""
+        if module in self._warmed_modules:
+            return
+        self._warmed_modules.add(module)
+        try:
+            resp = self._session.get(
+                f"{self._base_url}/?module={module}&file=index",
+                headers={"Referer": f"{self._base_url}/"},
+                timeout=20,
+            )
+            _LOGGER.debug("Warmup module %s: %s", module, self._describe(resp))
+        except requests.exceptions.RequestException as err:
+            _LOGGER.debug("Warmup module %s failed: %s", module, err)
+
     def _xml_command(self, path: str, subsystem: str, action: str, params: dict) -> ET.Element:
         """POST a Smartschool XML dispatcher command and return the parsed root."""
+        module_match = re.search(r"module=(\w+)", path)
+        module = module_match.group(1) if module_match else None
+        if module:
+            self._warm_module(module)
+
         command = "<request><command>"
         command += f"<subsystem>{subsystem}</subsystem><action>{action}</action><params>"
         for key, value in params.items():
@@ -608,19 +651,21 @@ class SmartschoolAPI:
         resp = self._session.post(
             f"{self._base_url}{path}",
             data={"command": command},
-            headers={"X-Requested-With": "XMLHttpRequest"},
+            headers=self._ajax_headers(module),
             timeout=20,
         )
         self._check_session(resp)
         resp.raise_for_status()
 
-        text = (resp.text or "").strip()
+        text = (resp.text or "").lstrip("\ufeff").strip()
         if not text:
             return ET.Element("server")
         if not text.startswith("<?xml") and not text.startswith("<server"):
             # Not a login page (checked above): Smartschool redirects to the
             # homepage when this module is switched off for the account.
-            raise SmartschoolModuleUnavailable(f"{subsystem}/{action} is niet beschikbaar")
+            raise SmartschoolModuleUnavailable(
+                f"{subsystem}/{action} is niet beschikbaar ({self._describe(resp)})"
+            )
         root = ET.fromstring(text)
         if root.findtext(".//status") == "error":
             raise SmartschoolError(root.findtext(".//message") or "Onbekende fout")
@@ -630,14 +675,16 @@ class SmartschoolAPI:
         resp = self._session.request(
             method,
             f"{self._base_url}{path}",
-            headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"},
+            headers={**self._ajax_headers(), "Accept": "application/json"},
             timeout=20,
             **kwargs,
         )
         self._check_session(resp)
         resp.raise_for_status()
         if "json" not in (resp.headers.get("Content-Type") or "").lower():
-            raise SmartschoolModuleUnavailable(f"{path} is niet beschikbaar")
+            raise SmartschoolModuleUnavailable(
+                f"{path.split('?', 1)[0]} is niet beschikbaar ({self._describe(resp)})"
+            )
         data = resp.json()
         # Some endpoints answer with a JSON-encoded string.
         if isinstance(data, str):
@@ -769,7 +816,7 @@ class SmartschoolAPI:
             resp = self._session.post(
                 f"{self._base_url}/Messages/Xhr/archivemessages",
                 data={"msgIDs[]": [msg_id]},
-                headers={"X-Requested-With": "XMLHttpRequest"},
+                headers=self._ajax_headers("Messages"),
                 timeout=20,
             )
             resp.raise_for_status()
@@ -792,7 +839,10 @@ class SmartschoolAPI:
         )
 
     def _load_compose_form(self, url: str) -> tuple[dict, str]:
-        resp = self._session.get(url, timeout=20)
+        self._warm_module("Messages")
+        resp = self._session.get(
+            url, headers={"Referer": f"{self._base_url}/?module=Messages&file=index"}, timeout=20
+        )
         self._check_session(resp)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -839,7 +889,10 @@ class SmartschoolAPI:
         }
         try:
             resp = self._session.post(
-                url, files={k: (None, v) for k, v in payload.items()}, timeout=30
+                url,
+                files={k: (None, v) for k, v in payload.items()},
+                headers={"Origin": self._base_url, "Referer": url},
+                timeout=30,
             )
         except requests.exceptions.RequestException as err:
             # Never retry a send: it may have gone out already.
@@ -897,6 +950,7 @@ class SmartschoolAPI:
                 "xml": "<results></results>",
                 "uniqueUsc": unique_usc,
             },
+            headers=self._ajax_headers("Messages"),
             timeout=20,
         )
         self._check_session(resp)
@@ -949,6 +1003,7 @@ class SmartschoolAPI:
                     "userlt": str(user["user_lt"]),
                     "uniqueUsc": hidden["uniqueUsc"],
                 },
+                headers=self._ajax_headers("Messages"),
                 timeout=20,
             )
             resp.raise_for_status()

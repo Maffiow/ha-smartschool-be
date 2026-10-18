@@ -228,3 +228,23 @@ def test_planned_elements(api):
     params = api._session.request.call_args.kwargs["params"]
     assert "planned-assignments" in params["types"]
     assert api._session.request.call_args.args[1].endswith("/planner/api/v1/planned-elements/user/1_2_0")
+
+
+def test_xml_command_sends_browser_headers_and_warms_module_once(api):
+    api._session.post.return_value = _resp(LIST_XML)
+    api.get_messages()
+    api.get_messages()
+
+    warmups = [c for c in api._session.get.call_args_list if "module=Messages&file=index" in c.args[0]]
+    assert len(warmups) == 1
+    headers = api._session.post.call_args.kwargs["headers"]
+    assert headers["Origin"] == "https://s.smartschool.be"
+    assert headers["Referer"] == "https://s.smartschool.be/?module=Messages&file=index"
+    assert headers["X-Requested-With"] == "XMLHttpRequest"
+
+
+def test_unavailable_error_describes_answer(api):
+    page = _resp("<html><title>Startpagina</title></html>", url="https://s.smartschool.be/", ctype="text/html")
+    api._session.post.return_value = page
+    with pytest.raises(SmartschoolModuleUnavailable, match="HTTP 200, /, text/html, titel 'Startpagina'"):
+        api.get_messages()
