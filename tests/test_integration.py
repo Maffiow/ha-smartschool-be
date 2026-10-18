@@ -3,8 +3,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
-from freezegun.api import FrozenDateTimeFactory
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
@@ -157,18 +156,15 @@ async def test_setup_and_sensors(hass: HomeAssistant, mock_api) -> None:
     close.assert_called_once()
 
 
-async def test_new_message_event(
-    hass: HomeAssistant, mock_api, freezer: FrozenDateTimeFactory
-) -> None:
+async def test_new_message_event(hass: HomeAssistant, mock_api) -> None:
     events = []
     hass.bus.async_listen(EVENT_NEW_MESSAGE, events.append)
-    await _setup(hass)
+    entry = await _setup(hass)
     # Messages already in the inbox at the first poll are not "new".
     assert events == []
 
     mock_api.return_value = [_msg(3, subject="Oudercontact"), *INBOX]
-    freezer.tick(timedelta(minutes=6))
-    async_fire_time_changed(hass)
+    await entry.runtime_data.messages.async_refresh()
     await hass.async_block_till_done()
 
     assert len(events) == 1
