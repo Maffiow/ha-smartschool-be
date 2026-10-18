@@ -10,6 +10,14 @@
           "password": "Password",
           "birthday": "Date of birth (YYYY-MM-DD)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with Smartschool",
+        "description": "Smartschool rejected the stored credentials for {username}. Enter the (new) password and date of birth.",
+        "data": {
+          "password": "Password",
+          "birthday": "Date of birth (YYYY-MM-DD)"
+        }
       }
     },
     "error": {
@@ -20,7 +28,8 @@
       "unknown": "Unknown error"
     },
     "abort": {
-      "already_configured": "This account is already configured"
+      "already_configured": "This account is already configured",
+      "reauth_successful": "Re-authentication was successful"
     }
   }
 }

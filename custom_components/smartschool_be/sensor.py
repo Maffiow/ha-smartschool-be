@@ -1,27 +1,22 @@
 """Platform for Smartschool BE sensor."""
 
+from __future__ import annotations
+
 import logging
 import re
-from datetime import timedelta
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import CONF_USERNAME, PERCENTAGE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_BASE_URL, CONF_BIRTHDAY, DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
-from .smartschool_api import SmartschoolAPI, SmartschoolAuthError
+from . import SmartschoolConfigEntry
+from .const import CONF_BASE_URL, DOMAIN
+from .coordinator import SmartschoolCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-SCAN_INTERVAL = timedelta(minutes=DEFAULT_SCAN_INTERVAL_MINUTES)
 
 _SAFE_RE = re.compile(r"[^a-z0-9]+")
 
@@ -58,46 +53,13 @@ def _teacher_name(teacher: dict) -> str:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: SmartschoolConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Smartschool sensors from a config entry."""
     base_url = config_entry.data[CONF_BASE_URL]
     username = config_entry.data[CONF_USERNAME]
-    password = config_entry.data[CONF_PASSWORD]
-    birthday = config_entry.data.get(CONF_BIRTHDAY, "")
-
-    api = SmartschoolAPI(base_url, username, password, birthday)
-
-    async def async_update_data():
-        try:
-            await hass.async_add_executor_job(api.login)
-
-            evaluations = await hass.async_add_executor_job(api.get_all_evaluations)
-            students = await hass.async_add_executor_job(api.get_students)
-            
-            _LOGGER.warning("SMARTSCHOOL STUDENTS DEBUG: %s", students)
-
-            if evaluations is None:
-                _LOGGER.warning("Smartschool returned no evaluation data.")
-
-            return {
-                "evaluations": evaluations or {},
-                "students": students or [],
-            }
-
-        except SmartschoolAuthError as err:
-            raise UpdateFailed(f"Authentication/data error: {err}") from err
-        except Exception as err:
-            raise UpdateFailed(f"Error communicating with Smartschool: {err}") from err
-
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name="smartschool_results",
-        update_method=async_update_data,
-        update_interval=SCAN_INTERVAL,
-    )
+    coordinator = config_entry.runtime_data
 
     known_courses: set[str] = set()
     known_students: set[int] = set()
@@ -162,10 +124,8 @@ async def async_setup_entry(
             ]
         )
 
-    coordinator.async_add_listener(_add_new_course_sensors)
-    coordinator.async_add_listener(_add_new_student_sensors)
-
-    await coordinator.async_refresh()
+    config_entry.async_on_unload(coordinator.async_add_listener(_add_new_course_sensors))
+    config_entry.async_on_unload(coordinator.async_add_listener(_add_new_student_sensors))
 
     async_add_entities(
         [
@@ -185,17 +145,16 @@ class SmartschoolLatestResultSensor(CoordinatorEntity, SensorEntity):
     """Shows the most recently available result across all courses."""
 
     _attr_icon = "mdi:school"
+    # Large list; keep it out of the recorder database.
+    _unrecorded_attributes = frozenset({"recente_resultaten"})
 
-    def __init__(self, coordinator: DataUpdateCoordinator, username: str, entry_id: str) -> None:
+    def __init__(self, coordinator: SmartschoolCoordinator, username: str, entry_id: str) -> None:
         super().__init__(coordinator)
         self._attr_name = f"Smartschool Laatste Resultaat ({username})"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_latest_result"
 
     @property
     def native_value(self):
-        if not self.coordinator.last_update_success:
-            return "Niet beschikbaar"
-
         data = self.coordinator.data or {}
         evaluations = data.get("evaluations") or {}
 
@@ -222,11 +181,7 @@ class SmartschoolLatestResultSensor(CoordinatorEntity, SensorEntity):
             "beschikbaar_sinds": latest.get("availability_date"),
             "feedback": latest.get("feedback"),
             "recente_resultaten": recent,
-            "last_update_success": self.coordinator.last_update_success,
         }
-
-        if self.coordinator.last_exception:
-            attrs["last_error"] = str(self.coordinator.last_exception)
 
         return attrs
 
@@ -236,10 +191,14 @@ class SmartschoolCourseSensor(CoordinatorEntity, SensorEntity):
 
     _attr_icon = "mdi:book-open-variant"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
+    # Full history can grow large; keep it out of the recorder database.
+    _unrecorded_attributes = frozenset({"score_history"})
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator,
+        coordinator: SmartschoolCoordinator,
         course_name: str,
         username: str,
         entry_id: str,
@@ -256,38 +215,18 @@ class SmartschoolCourseSensor(CoordinatorEntity, SensorEntity):
         return (evaluations.get("by_course") or {}).get(self._course_name, {})
 
     @property
-    def native_value(self):
-        """Return the latest score, numeric if possible, else description."""
-        if not self.coordinator.last_update_success:
-            return None
+    def native_value(self) -> float | None:
+        """Return the latest numeric score in %.
 
+        Non-numeric scores (e.g. "goed") stay available via the `score` attribute;
+        a measurement sensor must never get a text state.
+        """
         ev = self._get_course_data().get("latest", {})
 
-        if not ev:
+        try:
+            return float(ev["score_value"])
+        except (KeyError, TypeError, ValueError):
             return None
-
-        score = ev.get("score_value")
-
-        if score is not None:
-            try:
-                return float(score)
-            except (ValueError, TypeError):
-                pass
-
-        return ev.get("score_description")
-
-    @property
-    def native_unit_of_measurement(self):
-        ev = self._get_course_data().get("latest", {})
-
-        if ev.get("score_value") is not None:
-            try:
-                float(ev["score_value"])
-                return "%"
-            except (ValueError, TypeError):
-                pass
-
-        return None
 
     @property
     def extra_state_attributes(self):
@@ -338,7 +277,7 @@ class SmartschoolStudentInfoSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator,
+        coordinator: SmartschoolCoordinator,
         student: dict,
         base_url: str,
         entry_id: str,

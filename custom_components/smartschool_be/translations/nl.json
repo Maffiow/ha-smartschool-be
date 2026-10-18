@@ -10,6 +10,14 @@
           "password": "Wachtwoord",
           "birthday": "Geboortedatum (JJJJ-MM-DD)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Opnieuw aanmelden bij Smartschool",
+        "description": "Smartschool weigert de opgeslagen gegevens voor {username}. Geef het (nieuwe) wachtwoord en de geboortedatum in.",
+        "data": {
+          "password": "Wachtwoord",
+          "birthday": "Geboortedatum (JJJJ-MM-DD)"
+        }
       }
     },
     "error": {
@@ -20,7 +28,8 @@
       "unknown": "Onbekende fout"
     },
     "abort": {
-      "already_configured": "Deze account is al geconfigureerd"
+      "already_configured": "Deze account is al geconfigureerd",
+      "reauth_successful": "Opnieuw aanmelden gelukt"
     }
   }
 }

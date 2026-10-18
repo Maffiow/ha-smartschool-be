@@ -10,8 +10,16 @@ from bs4 import BeautifulSoup
 _LOGGER = logging.getLogger(__name__)
 
 
-class SmartschoolAuthError(Exception):
-    """Exception to indicate an authentication error."""
+class SmartschoolError(Exception):
+    """Base exception for Smartschool errors."""
+
+
+class SmartschoolConnectionError(SmartschoolError):
+    """Network problem or unexpected page while talking to Smartschool."""
+
+
+class SmartschoolAuthError(SmartschoolError):
+    """Credentials or account verification rejected by Smartschool."""
 
 
 class SmartschoolBirthdayError(SmartschoolAuthError):
@@ -56,7 +64,7 @@ class SmartschoolAPI:
         soup = BeautifulSoup(html, "html.parser")
         form = soup.find("form", {"name": form_name})
         if not form:
-            raise SmartschoolAuthError(f"Form '{form_name}' niet gevonden op pagina.")
+            raise SmartschoolConnectionError(f"Form '{form_name}' niet gevonden op pagina.")
 
         action = form.get("action") or ""
         if not action:
@@ -85,7 +93,7 @@ class SmartschoolAPI:
                 break
 
         if not form:
-            raise SmartschoolAuthError("Login form niet gevonden.")
+            raise SmartschoolConnectionError("Login form niet gevonden.")
 
         action = form.get("action") or "/login"
         post_url = action if action.startswith("http") else f"{self._base_url}{action}"
@@ -117,7 +125,7 @@ class SmartschoolAPI:
     def _handle_account_verification(self, response: requests.Response) -> requests.Response:
         """Submit birthday to the account-verification form."""
         if not self._birthday:
-            raise SmartschoolAuthError(
+            raise SmartschoolBirthdayError(
                 "Smartschool vraagt om account-verificatie (geboortedatum), "
                 "maar er is geen geboortedatum geconfigureerd."
             )
@@ -137,7 +145,7 @@ class SmartschoolAPI:
             post_url, payload = self._extract_form(
                 response.text, "account_verification_form", current_url=response.url
             )
-        except SmartschoolAuthError:
+        except SmartschoolConnectionError:
             post_url = response.url
             payload = {}
 
@@ -191,7 +199,7 @@ class SmartschoolAPI:
             _LOGGER.debug("Login POST response: status=%s url=%s", post_resp.status_code, post_resp.url)
 
         except requests.exceptions.RequestException as err:
-            raise SmartschoolAuthError("Login netwerkfout") from err
+            raise SmartschoolConnectionError("Login netwerkfout") from err
 
         txt = (post_resp.text or "").lower()
         if "ongeldige gebruikersnaam of wachtwoord" in txt:
@@ -200,10 +208,8 @@ class SmartschoolAPI:
         if self._is_account_verification_page(post_resp):
             try:
                 post_resp = self._handle_account_verification(post_resp)
-            except SmartschoolAuthError:
-                raise
             except requests.exceptions.RequestException as err:
-                raise SmartschoolAuthError("Account-verificatie netwerkfout") from err
+                raise SmartschoolConnectionError("Account-verificatie netwerkfout") from err
 
             _LOGGER.debug("Post-verification response: status=%s url=%s", post_resp.status_code, post_resp.url)
 
@@ -228,18 +234,22 @@ class SmartschoolAPI:
             if self._is_account_verification_page(warm):
                 warm = self._handle_account_verification(warm)
 
-        except SmartschoolAuthError:
-            raise
         except requests.exceptions.RequestException as err:
             _LOGGER.debug("Warmup request failed (non-fatal): %s", err)
 
         self._is_logged_in = True
         _LOGGER.debug("Successfully logged in to Smartschool.")
 
+    def close(self) -> None:
+        """Close the underlying HTTP session."""
+        self._session.close()
+        self._is_logged_in = False
+
     def _force_relogin(self):
         """Reset session and re-authenticate."""
         _LOGGER.debug("Forcing re-login (session likely expired)")
         self._is_logged_in = False
+        self._session.close()
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -371,7 +381,7 @@ class SmartschoolAPI:
                 _LOGGER.debug("Re-login/retry failed: %s", err)
 
         if not raw:
-            _LOGGER.warning("No evaluations found for '%s'.", self._username)
+            _LOGGER.debug("No evaluations found for '%s'.", self._username)
             return None
 
         _LOGGER.debug("Fetched %d evaluations in total", len(raw))
@@ -405,6 +415,7 @@ class SmartschoolAPI:
             {k: len(v["history"]) for k, v in by_course.items()},
         )
         return {"by_course": by_course, "latest": latest, "recent": recent}
+
     def _fetch_students(self) -> list | None:
         """Fetch students from Smartschool Studentcard API."""
         warm = self._session.get(
@@ -417,11 +428,11 @@ class SmartschoolAPI:
             },
         )
         warm.raise_for_status()
-    
+
         if self._is_account_verification_page(warm) or self._is_login_page(warm):
             _LOGGER.debug("Studentcard warmup redirected to auth page — session lost")
             return None
-    
+
         headers = {
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "X-Requested-With": "XMLHttpRequest",
@@ -431,7 +442,7 @@ class SmartschoolAPI:
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-origin",
         }
-    
+
         resp = self._session.post(
             self._students_url,
             data={},
@@ -440,26 +451,20 @@ class SmartschoolAPI:
             headers=headers,
         )
         resp.raise_for_status()
-    
+
         if self._is_account_verification_page(resp) or self._is_login_page(resp):
             _LOGGER.debug("Students API redirected to auth page — session lost")
             return None
-    
+
         ctype = (resp.headers.get("Content-Type") or "").lower()
-    
-        _LOGGER.warning(
-            "SMARTSCHOOL STUDENTS API DEBUG: status=%s ctype=%s url=%s body=%s",
-            resp.status_code,
-            ctype,
-            resp.url,
-            (resp.text or "")[:500].replace("\n", " "),
-        )
-    
+
+        _LOGGER.debug("Students API: status=%s ctype=%s", resp.status_code, ctype)
+
         if "json" not in ctype:
             return None
-    
+
         data = resp.json()
-    
+
         return data if isinstance(data, list) else None
 
     def get_students(self) -> list:

@@ -16,12 +16,14 @@ Een onofficiële Home Assistant custom integratie om toetsresultaten en leerling
 - **Laatste 5 resultaten** (alle vakken) op de overzichtssensor
 - Grafiekklaar voor [ApexCharts Card](https://github.com/RomRider/apexcharts-card) — kleuren per drempelwaarde (rood/geel/groen)
 - Automatische herauthenticatie bij verlopen sessie
+- Gewijzigd wachtwoord of geboortedatum? Home Assistant toont een melding om opnieuw aan te melden (reauth)
+- Grote attributen (`score_history`, `recente_resultaten`) worden niet in de recorder-database opgeslagen
 
 ## Vereisten
 
 - Een actief Smartschool-account
 - De **geboortedatum** van de leerling (gebruikt voor de verplichte account-verificatiestap van Smartschool)
-- Home Assistant 2024.1 of nieuwer
+- Home Assistant 2025.1 of nieuwer
 
 ## Installatie
 
@@ -79,7 +81,7 @@ Na configuratie maakt de integratie automatisch sensoren aan op basis van de gev
 
 `sensor.smartschool_<vaknaam>_<gebruikersnaam>`
 
-De sensorwaarde (state) is de meest recente numerieke score (in %) of de scorebeschrijving als er geen percentage beschikbaar is.
+De sensorwaarde (state) is de meest recente numerieke score (in %). Heeft de laatste toets geen percentage (bv. `goed`), dan is de state `unknown` en staat de beschrijving in het attribuut `score`.
 
 | Attribuut | Beschrijving |
 |:----------|:-------------|
