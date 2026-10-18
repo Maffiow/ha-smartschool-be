@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Smartschool Results",
-        "description": "Configureer je Smartschool account. De geboortedatum wordt gebruikt voor de automatische account-verificatie.",
+        "title": "Smartschool BE",
+        "description": "Stel je Smartschool-account in. De geboortedatum wordt gebruikt voor de automatische account-verificatie die Smartschool vereist.",
         "data": {
           "base_url": "Smartschool URL",
           "username": "Gebruikersnaam",

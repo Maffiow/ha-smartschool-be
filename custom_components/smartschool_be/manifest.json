@@ -1,0 +1,12 @@
+{
+  "domain": "smartschool_be",
+  "name": "Smartschool BE",
+  "codeowners": ["@Maffiow"],
+  "config_flow": true,
+  "documentation": "https://github.com/Maffiow/ha-smartschool-be",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Maffiow/ha-smartschool-be/issues",
+  "requirements": ["beautifulsoup4>=4.12.0"],
+  "version": "1.2.0"
+}

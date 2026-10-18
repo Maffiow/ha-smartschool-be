@@ -1,6 +1,12 @@
-# Smartschool Results — Home Assistant integratie
+# Smartschool BE — Home Assistant integratie
 
-Een onofficiële Home Assistant custom integratie om toetsresultaten op te halen van het [Smartschool](https://www.smartschool.be) schoolplatform.
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
+[![Validate](https://github.com/Maffiow/ha-smartschool-be/actions/workflows/validate.yml/badge.svg)](https://github.com/Maffiow/ha-smartschool-be/actions/workflows/validate.yml)
+[![Release](https://img.shields.io/github/v/release/Maffiow/ha-smartschool-be)](https://github.com/Maffiow/ha-smartschool-be/releases)
+
+Een onofficiële Home Assistant custom integratie om toetsresultaten en leerlinginfo op te halen van het Vlaamse [Smartschool](https://www.smartschool.be) schoolplatform.
+
+> Gebaseerd op het werk van [janmeermans/smartschool_ha](https://github.com/janmeermans/smartschool_ha) (MIT). Deze integratie gebruikt een eigen domein (`smartschool_be`) en kan naast andere Smartschool-integraties geïnstalleerd worden.
 
 ## Functies
 
@@ -15,27 +21,31 @@ Een onofficiële Home Assistant custom integratie om toetsresultaten op te halen
 
 - Een actief Smartschool-account
 - De **geboortedatum** van de leerling (gebruikt voor de verplichte account-verificatiestap van Smartschool)
-- Home Assistant 2023.1 of nieuwer
+- Home Assistant 2024.1 of nieuwer
 
 ## Installatie
 
 ### Via HACS (aanbevolen)
 
-1. Ga in Home Assistant naar **HACS → Integraties**
-2. Klik op de drie puntjes rechtsboven → **Aangepaste repository toevoegen**
-3. Voer de repository-URL in en kies categorie **Integratie**
-4. Klik op **Installeren**
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Maffiow&repository=ha-smartschool-be&category=integration)
+
+1. Ga in Home Assistant naar **HACS**
+2. Klik op de drie puntjes rechtsboven → **Aangepaste repositories**
+3. Voer `https://github.com/Maffiow/ha-smartschool-be` in en kies type **Integratie**
+4. Zoek **Smartschool BE** en klik op **Downloaden**
 5. Herstart Home Assistant
+
+Nieuwe versies verschijnen automatisch als update in HACS (en onder **Instellingen → Updates**).
 
 ### Handmatig
 
-1. Kopieer de map `smartschool_ha` naar `<config>/custom_components/` op je Home Assistant installatie
+1. Kopieer de map `custom_components/smartschool_be` naar `<config>/custom_components/` op je Home Assistant installatie
 2. Herstart Home Assistant
 
 ## Configuratie
 
 1. Ga naar **Instellingen → Apparaten & diensten → Integratie toevoegen**
-2. Zoek naar **Smartschool Results**
+2. Zoek naar **Smartschool BE**
 3. Vul de gegevens in:
 
 | Veld | Beschrijving | Voorbeeld |
@@ -164,6 +174,14 @@ content: |-
 - Per API-aanroep worden maximaal 50 resultaten per pagina opgehaald; alle pagina's worden doorlopen
 - Deze integratie is **niet officieel** en heeft geen band met Smartschool/Scala BVBA
 
+## Een nieuwe versie uitbrengen
+
+1. Verhoog `version` in `custom_components/smartschool_be/manifest.json` (bv. `1.2.1`)
+2. Commit en push naar `main`
+3. Tag en push: `git tag v1.2.1 && git push origin v1.2.1`
+
+De workflow *Release* controleert of de tag overeenkomt met de manifest-versie en maakt de GitHub release aan; HACS biedt die daarna als update aan.
+
 ## Licentie
 
-MIT License
+MIT License — zie [LICENSE](LICENSE).

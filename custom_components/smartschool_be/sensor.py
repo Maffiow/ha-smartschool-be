@@ -1,4 +1,4 @@
-"""Platform for Smartschool Results sensor."""
+"""Platform for Smartschool BE sensor."""
 
 import logging
 import re

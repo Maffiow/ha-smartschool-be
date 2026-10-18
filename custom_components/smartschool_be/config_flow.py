@@ -1,4 +1,4 @@
-"""Config flow for Smartschool Results integration."""
+"""Config flow for Smartschool BE integration."""
 import logging
 import re
 
@@ -16,7 +16,7 @@ _BIRTHDAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Smartschool Results."""
+    """Handle a config flow for Smartschool BE."""
 
     VERSION = 1
 

@@ -1,4 +1,4 @@
-"""The Smartschool Results integration."""
+"""The Smartschool BE integration."""
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,7 +12,7 @@ PLATFORMS = ["sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Smartschool Results from a config entry."""
+    """Set up Smartschool BE from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
 
