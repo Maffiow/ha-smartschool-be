@@ -166,13 +166,15 @@ async def async_setup_entry(
 class SmartschoolLatestResultSensor(CoordinatorEntity, SensorEntity):
     """Shows the most recently available result across all courses."""
 
+    _attr_has_entity_name = True
+
     _attr_icon = "mdi:school"
     # Large list; keep it out of the recorder database.
     _unrecorded_attributes = frozenset({"recente_resultaten"})
 
     def __init__(self, coordinator: SmartschoolCoordinator, username: str, entry_id: str) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"Smartschool Laatste Resultaat ({username})"
+        self._attr_name = "Laatste resultaat"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_latest_result"
 
     @property
@@ -211,6 +213,8 @@ class SmartschoolLatestResultSensor(CoordinatorEntity, SensorEntity):
 class SmartschoolCourseSensor(CoordinatorEntity, SensorEntity):
     """Shows the latest score for a specific course."""
 
+    _attr_has_entity_name = True
+
     _attr_icon = "mdi:book-open-variant"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
@@ -227,7 +231,7 @@ class SmartschoolCourseSensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator)
         self._course_name = course_name
-        self._attr_name = f"Smartschool {course_name} ({username})"
+        self._attr_name = course_name
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_course_{_course_slug(course_name)}"
 
     def _get_course_data(self) -> dict:
@@ -294,6 +298,8 @@ class SmartschoolCourseSensor(CoordinatorEntity, SensorEntity):
 class SmartschoolStudentInfoSensor(CoordinatorEntity, SensorEntity):
     """Student info sensor, grouped as a Home Assistant device."""
 
+    _attr_has_entity_name = True
+
     _attr_icon = "mdi:account-school"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -309,9 +315,7 @@ class SmartschoolStudentInfoSensor(CoordinatorEntity, SensorEntity):
         self._student_id = int(student["userID"])
         self._base_url = base_url.rstrip("/")
 
-        name = _student_name(student)
-
-        self._attr_name = f"{name} Info"
+        self._attr_name = "Info"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_info"
 
     def _get_student(self) -> dict:
@@ -382,6 +386,8 @@ class SmartschoolStudentInfoSensor(CoordinatorEntity, SensorEntity):
 class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
     """Number of unread messages in the inbox."""
 
+    _attr_has_entity_name = True
+
     _attr_icon = "mdi:email-outline"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "berichten"
@@ -391,7 +397,7 @@ class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
         self, coordinator: SmartschoolMessagesCoordinator, username: str, entry_id: str
     ) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"Smartschool Ongelezen Berichten ({username})"
+        self._attr_name = "Ongelezen berichten"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_unread_messages"
 
     def _inbox(self) -> list[dict]:
@@ -432,6 +438,8 @@ class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
 class SmartschoolUpcomingTasksSensor(CoordinatorEntity, SensorEntity):
     """Number of upcoming tasks and tests (Smartschool 'Taken en toetsen')."""
 
+    _attr_has_entity_name = True
+
     _attr_icon = "mdi:clipboard-text-clock"
     _attr_native_unit_of_measurement = "taken"
     _unrecorded_attributes = frozenset({"taken"})
@@ -440,7 +448,7 @@ class SmartschoolUpcomingTasksSensor(CoordinatorEntity, SensorEntity):
         self, coordinator: SmartschoolAgendaCoordinator, username: str, entry_id: str
     ) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"Smartschool Komende Taken ({username})"
+        self._attr_name = "Komende taken"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_upcoming_tasks"
 
     def _tasks(self) -> list[dict]:
@@ -500,7 +508,7 @@ class SmartschoolStudentClassSensor(SmartschoolStudentInfoSensor):
 
     def __init__(self, coordinator, student, base_url, entry_id) -> None:
         super().__init__(coordinator, student, base_url, entry_id)
-        self._attr_name = f"{_student_name(student)} Klas"
+        self._attr_name = "Klas"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_class"
 
     @property
@@ -524,7 +532,7 @@ class SmartschoolStudentTitularSensor(SmartschoolStudentInfoSensor):
 
     def __init__(self, coordinator, student, base_url, entry_id) -> None:
         super().__init__(coordinator, student, base_url, entry_id)
-        self._attr_name = f"{_student_name(student)} Titularis"
+        self._attr_name = "Titularis"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_titular"
 
     def _titulars(self) -> list[str]:

@@ -155,24 +155,27 @@ async def test_setup_and_sensors(hass: HomeAssistant, mock_api) -> None:
     assert entry.state is ConfigEntryState.LOADED
 
     # Latest numeric-less score must give unknown, not a text state.
-    wisk = hass.states.get("sensor.smartschool_wiskunde_jan_peeters")
+    wisk = hass.states.get("sensor.smartschool_jan_peeters_wiskunde")
     assert wisk.state == "unknown"
     assert wisk.attributes["score"] == "goed"
     assert wisk.attributes["unit_of_measurement"] == "%"
     assert wisk.attributes["gemiddelde_score"] == 80.0
 
-    frans = hass.states.get("sensor.smartschool_frans_jan_peeters")
+    frans = hass.states.get("sensor.smartschool_jan_peeters_frans")
     assert float(frans.state) == 50.0
 
-    latest = hass.states.get("sensor.smartschool_laatste_resultaat_jan_peeters")
+    latest = hass.states.get("sensor.smartschool_jan_peeters_laatste_resultaat")
     assert latest.state == "H2"
 
-    unread = hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters")
+    unread = hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten")
     assert unread.state == "278"  # counters cover the whole inbox, not one page
+    # Device name + short entity name, never doubled.
+    assert unread.attributes["friendly_name"] == "Smartschool jan.peeters Ongelezen berichten"
+    assert hass.states.get("sensor.jan_peeters_klas").attributes["friendly_name"] == "Jan Peeters Klas"
     assert unread.attributes["totaal_in_inbox"] == 480
     assert unread.attributes["berichten"][0]["id"] == 2
 
-    tasks = hass.states.get("sensor.smartschool_komende_taken_jan_peeters")
+    tasks = hass.states.get("sensor.smartschool_jan_peeters_komende_taken")
     # agenda task + planner test; the task in the past is not counted
     assert tasks.state == "2"
     assert tasks.attributes["aantal_toetsen"] == 2
@@ -205,7 +208,7 @@ async def test_new_message_event(hass: HomeAssistant, mock_api) -> None:
 
 async def test_calendar(hass: HomeAssistant, mock_api) -> None:
     await _setup(hass)
-    state = hass.states.get("calendar.smartschool_agenda_jan_peeters")
+    state = hass.states.get("calendar.smartschool_jan_peeters_agenda")
     assert state is not None
 
     start = dt_util.start_of_local_day()
@@ -261,7 +264,7 @@ async def test_messages_failure_does_not_block_setup(hass: HomeAssistant, mock_a
     mock_api.side_effect = SmartschoolError("module uitgeschakeld")
     entry = await _setup(hass)
     assert entry.state is ConfigEntryState.LOADED
-    state = hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters")
+    state = hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten")
     assert state.state == "unavailable"
 
 
@@ -354,13 +357,13 @@ async def test_disabled_module_does_not_trigger_reauth(hass: HomeAssistant, mock
     assert entry.state is ConfigEntryState.LOADED
     assert hass.config_entries.flow.async_progress() == []
     assert entry.runtime_data.agenda.unavailable_modules == {"agenda/tasks"}
-    tasks = hass.states.get("sensor.smartschool_komende_taken_jan_peeters")
+    tasks = hass.states.get("sensor.smartschool_jan_peeters_komende_taken")
     assert tasks.state == "1"  # the planner still works
 
 
 async def test_options_switch_modules_off(hass: HomeAssistant, mock_api) -> None:
     entry = await _setup(hass)
-    assert hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters") is not None
+    assert hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten") is not None
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
@@ -380,9 +383,9 @@ async def test_options_switch_modules_off(hass: HomeAssistant, mock_api) -> None
     assert entry.state is ConfigEntryState.LOADED
     assert entry.runtime_data.messages is None
     assert entry.runtime_data.agenda is None
-    assert hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters") is None
-    assert hass.states.get("calendar.smartschool_agenda_jan_peeters") is None
-    assert hass.states.get("sensor.smartschool_frans_jan_peeters") is not None
+    assert hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten") is None
+    assert hass.states.get("calendar.smartschool_jan_peeters_agenda") is None
+    assert hass.states.get("sensor.smartschool_jan_peeters_frans") is not None
     assert hass.states.get("sensor.jan_peeters_klas") is not None
 
     with pytest.raises(ServiceValidationError):

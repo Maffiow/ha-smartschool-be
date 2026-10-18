@@ -96,11 +96,13 @@ Per kind maakt de integratie een apparaat met:
 
 ## Beschikbare sensoren
 
+> Alle entiteiten hangen onder het apparaat **Smartschool &lt;gebruikersnaam&gt;** (of onder het apparaat van je kind). De entity-id's hieronder gelden voor nieuwe installaties; bestaande entiteiten behouden hun id.
+
 Na configuratie maakt de integratie automatisch sensoren aan op basis van de gevonden vakken.
 
 ### Overzichtssensor
 
-`sensor.smartschool_laatste_resultaat_<gebruikersnaam>`
+`sensor.smartschool_<gebruikersnaam>_laatste_resultaat`
 
 | Attribuut | Beschrijving |
 |:----------|:-------------|
@@ -114,7 +116,7 @@ Na configuratie maakt de integratie automatisch sensoren aan op basis van de gev
 
 ### Vaksensoren
 
-`sensor.smartschool_<vaknaam>_<gebruikersnaam>`
+`sensor.smartschool_<gebruikersnaam>_<vaknaam>`
 
 De sensorwaarde (state) is de meest recente numerieke score (in %). Heeft de laatste toets geen percentage (bv. `goed`), dan is de state `unknown` en staat de beschrijving in het attribuut `score`.
 
@@ -148,7 +150,7 @@ De sensorwaarde (state) is de meest recente numerieke score (in %). Heeft de laa
 
 ### Sensor
 
-`sensor.smartschool_ongelezen_berichten_<gebruikersnaam>` — aantal ongelezen berichten in de hele inbox, hetzelfde getal als het bolletje in Smartschool (elke 5 minuten bijgewerkt).
+`sensor.smartschool_<gebruikersnaam>_ongelezen_berichten` — aantal ongelezen berichten in de hele inbox, hetzelfde getal als het bolletje in Smartschool (elke 5 minuten bijgewerkt).
 
 | Attribuut | Beschrijving |
 |:----------|:-------------|
@@ -205,8 +207,8 @@ data:
 
 ## Agenda
 
-- `calendar.smartschool_agenda_<gebruikersnaam>` — lessen met begin- en einduur, lokaal, leerkracht en lesonderwerp, plus taken en toetsen. Komt uit de klassieke agenda en/of de Planner (voor een ouderaccount: de planner van het kind). Werkt met de kalenderkaart en kalender-automatiseringen.
-- `sensor.smartschool_komende_taken_<gebruikersnaam>` — aantal komende taken en toetsen, met attributen `volgende_datum`, `aantal_toetsen`, `volgende_toets` en de lijst `taken`.
+- `calendar.smartschool_<gebruikersnaam>_agenda` — lessen met begin- en einduur, lokaal, leerkracht en lesonderwerp, plus taken en toetsen. Komt uit de klassieke agenda en/of de Planner (voor een ouderaccount: de planner van het kind). Werkt met de kalenderkaart en kalender-automatiseringen.
+- `sensor.smartschool_<gebruikersnaam>_komende_taken` — aantal komende taken en toetsen, met attributen `volgende_datum`, `aantal_toetsen`, `volgende_toets` en de lijst `taken`.
 
 De agenda wordt elk uur bijgewerkt; de kalenderweergave haalt lessen op voor de periode die je bekijkt.
 
@@ -229,7 +231,7 @@ yaxis:
     max: 100
     decimals: 0
 series:
-  - entity: sensor.smartschool_wiskunde_jan_peeters
+  - entity: sensor.smartschool_jan_peeters_wiskunde
     type: column
     data_generator: |
       const now = new Date();
@@ -259,7 +261,7 @@ series:
 type: markdown
 content: |-
   ## Laatste 5 resultaten
-  {% set r = state_attr('sensor.smartschool_laatste_resultaat_jan_peeters', 'recente_resultaten') %}
+  {% set r = state_attr('sensor.smartschool_jan_peeters_laatste_resultaat', 'recente_resultaten') %}
   {% if r and r | length > 0 %}
   {% set ns = namespace(rijen=['| Datum | Vak | Toets | Score |', '|:------|:----|:------|------:|']) %}
   {% for item in r %}

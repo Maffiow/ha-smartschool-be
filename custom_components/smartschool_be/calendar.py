@@ -119,12 +119,13 @@ class SmartschoolCalendar(CoordinatorEntity[SmartschoolAgendaCoordinator], Calen
     """Lessons (timed) and tasks/tests (all-day) of the account."""
 
     _attr_icon = "mdi:calendar-school"
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: SmartschoolAgendaCoordinator, username: str, entry_id: str
     ) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"Smartschool Agenda ({username})"
+        self._attr_name = "Agenda"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_agenda"
 
     def _cached_events(self) -> list[CalendarEvent]:
