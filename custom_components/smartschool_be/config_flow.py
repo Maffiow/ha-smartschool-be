@@ -24,6 +24,7 @@ from .smartschool_api import (
     SmartschoolBirthdayError,
     SmartschoolTwoFactorFailed,
     SmartschoolTwoFactorRequired,
+    TotpSecretError,
     normalize_totp_secret,
 )
 
@@ -53,8 +54,8 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return {CONF_BIRTHDAY: "invalid_birthday"}
         try:
             normalize_totp_secret(totp_secret)
-        except ValueError:
-            return {CONF_TOTP_SECRET: "invalid_totp_secret"}
+        except TotpSecretError as err:
+            return {CONF_TOTP_SECRET: err.reason}
 
         api = SmartschoolAPI(base_url, username, password, birthday, totp_secret)
         try:

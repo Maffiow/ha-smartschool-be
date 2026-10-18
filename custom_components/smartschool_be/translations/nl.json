@@ -34,9 +34,10 @@
       "invalid_base_url": "Ongeldige URL (moet met http:// of https:// beginnen)",
       "invalid_birthday": "Ongeldige geboortedatum (gebruik formaat JJJJ-MM-DD, bv. 2010-03-15)",
       "unknown": "Onbekende fout",
-      "invalid_totp_secret": "Ongeldige 2FA-sleutel: gebruik de lettercode uit Smartschool (A-Z en 2-7), niet de 6-cijferige code.",
+      "invalid_totp_secret": "Ongeldige 2FA-sleutel: die bestaat uit minstens 16 tekens A-Z en 2-7 (een otpauth://-link mag ook). Let op O versus 0 en I versus 1.",
       "totp_required": "Je school vraagt tweestapsverificatie: vul de 2FA-sleutel van je authenticator-app in.",
-      "totp_failed": "Smartschool weigerde de 2FA-code. Controleer de sleutel en of de klok van Home Assistant juist staat."
+      "totp_failed": "Smartschool weigerde de 2FA-code. Controleer de sleutel en of de klok van Home Assistant juist staat.",
+      "totp_looks_like_code": "Dit is de 6-cijferige code die elke 30 seconden verandert. Vul de geheime lettercode in die Smartschool toont bij het instellen van de authenticator-app."
     },
     "abort": {
       "already_configured": "Deze account is al geconfigureerd",

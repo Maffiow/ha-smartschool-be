@@ -8,6 +8,7 @@ from custom_components.smartschool_be.smartschool_api import (
     SmartschoolAPI,
     SmartschoolTwoFactorFailed,
     SmartschoolTwoFactorRequired,
+    TotpSecretError,
     normalize_totp_secret,
     totp_code,
 )
@@ -32,8 +33,41 @@ def test_totp_rfc6238_vectors():
 def test_normalize_secret():
     assert normalize_totp_secret("gezd gnbv-gy3t qojq") == "GEZDGNBVGY3TQOJQ"
     assert normalize_totp_secret("") == ""
-    with pytest.raises(ValueError):
-        normalize_totp_secret("123456")  # the 6-digit code instead of the key
+
+
+@pytest.mark.parametrize(
+    "pasted",
+    [
+        "GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ",
+        "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ====",  # '=' padding
+        "GEZD" + chr(0xA0) + "GNBV" + chr(0x200B) + "GY3TQOJQGEZDGNBVGY3TQOJQ",  # nbsp + zero-width space
+        "otpauth://totp/Smartschool:jan?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Smartschool",
+        "  gezdgnbvgy3tqojqgezdgnbvgy3tqojq" + chr(10),
+    ],
+)
+def test_pasted_keys_are_accepted(pasted):
+    assert normalize_totp_secret(pasted) == RFC_SECRET
+
+
+def test_odd_length_key_still_makes_codes():
+    # 26 characters: not a valid strict base32 length, but authenticator apps accept it.
+    key = normalize_totp_secret("JBSWY3DPEHPK3PXPJBSWY3DPEH")
+    assert len(totp_code(key)) == 6
+
+
+@pytest.mark.parametrize(
+    ("pasted", "reason"),
+    [
+        ("123456", "totp_looks_like_code"),
+        ("123 456", "totp_looks_like_code"),
+        ("GEZDGNBVGY3TQOJ0GEZDGNBV", "invalid_totp_secret"),  # 0 is not base32
+        ("ABCD", "invalid_totp_secret"),  # too short
+    ],
+)
+def test_unusable_keys_say_why(pasted, reason):
+    with pytest.raises(TotpSecretError) as err:
+        normalize_totp_secret(pasted)
+    assert err.value.reason == reason
 
 
 class FakeSession:

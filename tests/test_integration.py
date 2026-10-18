@@ -324,7 +324,7 @@ async def test_user_flow_asks_for_2fa_key(hass: HomeAssistant) -> None:
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {**DATA, "totp_secret": "123456"}
         )
-    assert result["errors"] == {"totp_secret": "invalid_totp_secret"}
+    assert result["errors"] == {"totp_secret": "totp_looks_like_code"}
     login.assert_not_called()
 
     with patch(f"{API}.login"), patch(

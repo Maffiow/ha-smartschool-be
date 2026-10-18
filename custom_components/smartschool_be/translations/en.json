@@ -34,9 +34,10 @@
       "invalid_base_url": "Invalid URL (must start with http:// or https://)",
       "invalid_birthday": "Invalid date of birth (use format YYYY-MM-DD, e.g. 2010-03-15)",
       "unknown": "Unknown error",
-      "invalid_totp_secret": "Invalid 2FA key: use the letter code from Smartschool (A-Z and 2-7), not the 6-digit code.",
+      "invalid_totp_secret": "Invalid 2FA key: it should be at least 16 characters of A-Z and 2-7 (an otpauth:// link is fine too). Mind O vs 0 and I vs 1.",
       "totp_required": "Your school asks for two-factor authentication: enter the 2FA key of your authenticator app.",
-      "totp_failed": "Smartschool rejected the 2FA code. Check the key and that Home Assistant's clock is correct."
+      "totp_failed": "Smartschool rejected the 2FA code. Check the key and that Home Assistant's clock is correct.",
+      "totp_looks_like_code": "This is the 6-digit code that changes every 30 seconds. Enter the secret letter code Smartschool shows when you set up the authenticator app."
     },
     "abort": {
       "already_configured": "This account is already configured",

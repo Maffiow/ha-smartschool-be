@@ -1,6 +1,4 @@
 """Smartschool API client."""
-import base64
-import binascii
 import hashlib
 import hmac
 import html as html_lib
@@ -54,21 +52,54 @@ def _el_to_dict(element: ET.Element) -> dict:
     return result
 
 
+_B32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+
+class TotpSecretError(ValueError):
+    """The 2FA key cannot be used; `reason` is a translation key for the form."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 def normalize_totp_secret(secret: str) -> str:
-    """Clean an authenticator key as shown by Smartschool ("ABCD EFGH ...")."""
-    cleaned = re.sub(r"[\s-]", "", secret or "").upper()
+    """Clean an authenticator key as leniently as authenticator apps do.
+
+    Accepts the key with spaces, dashes, invisible characters, '=' padding,
+    lower case, or a whole otpauth:// link (from the QR code).
+    """
+    text = (secret or "").strip()
+    if text.lower().startswith("otpauth://"):
+        match = re.search(r"[?&]secret=([^&#]+)", text, re.IGNORECASE)
+        text = match.group(1) if match else ""
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", text).upper()
     if not cleaned:
         return ""
-    try:
-        base64.b32decode(cleaned + "=" * (-len(cleaned) % 8))
-    except (binascii.Error, ValueError) as err:
-        raise ValueError("Ongeldige 2FA-sleutel") from err
+    if cleaned.isdigit():
+        raise TotpSecretError("totp_looks_like_code")
+    if any(char not in _B32_ALPHABET for char in cleaned) or len(cleaned) < 16:
+        raise TotpSecretError("invalid_totp_secret")
     return cleaned
+
+
+def _b32decode_lenient(secret: str) -> bytes:
+    """Base32 decode without padding rules (trailing bits are ignored)."""
+    bits = 0
+    value = 0
+    out = bytearray()
+    for char in secret:
+        value = (value << 5) | _B32_ALPHABET.index(char)
+        bits += 5
+        if bits >= 8:
+            bits -= 8
+            out.append((value >> bits) & 0xFF)
+    return bytes(out)
 
 
 def totp_code(secret: str, at: float | None = None, step: int = 30, digits: int = 6) -> str:
     """RFC 6238 time-based one-time password (as an authenticator app shows it)."""
-    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    key = _b32decode_lenient(secret)
     counter = int((time.time() if at is None else at) // step)
     digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha1).digest()
     offset = digest[-1] & 0x0F
