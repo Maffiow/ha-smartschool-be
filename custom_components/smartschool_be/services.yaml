@@ -11,6 +11,19 @@ get_message:
         number:
           min: 1
           mode: box
+select_message:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    message_id:
+      required: true
+      example: 123456
+      selector:
+        number:
+          min: 1
+          mode: box
 reply_message:
   fields:
     config_entry_id:

@@ -440,3 +440,30 @@ async def test_stored_session_skips_login(hass: HomeAssistant) -> None:
 
     assert entry.state is ConfigEntryState.LOADED
     assert fresh_logins == []
+
+
+async def test_select_message_fills_popup_sensor(hass: HomeAssistant, mock_api) -> None:
+    """select_message loads a message into the 'Geselecteerd bericht' sensor."""
+    entry = await _setup(hass)
+    sensor_id = "sensor.smartschool_jan_peeters_geselecteerd_bericht"
+    assert hass.states.get(sensor_id).state == "unknown"
+    unread = hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten")
+    assert unread.attributes["config_entry_id"] == entry.entry_id
+
+    full = {
+        "id": 2, "from": "Juf An", "subject": "Uitstap", "date": "2026-10-16 07:37",
+        "to": ["Ouders 3A"], "cc": [], "text": "Beste ouders,\ntot morgen",
+        "html": "<p>Beste ouders</p>", "can_reply": True,
+        "attachments": [{"name": "brief.pdf", "size": "12 KB", "mime": "application/pdf"}],
+    }
+    with patch(f"{API}.get_message", return_value=full) as get_message:
+        await hass.services.async_call(DOMAIN, "select_message", {"message_id": 2}, blocking=True)
+        await hass.async_block_till_done()
+
+    get_message.assert_called_once_with(2)
+    state = hass.states.get(sensor_id)
+    assert state.state == "Uitstap"
+    assert state.attributes["tekst"] == "Beste ouders,\ntot morgen"
+    assert state.attributes["bijlagen"] == ["brief.pdf"]
+    assert state.attributes["id"] == 2
+    assert "html" not in state.attributes  # never raw HTML in the dashboard

@@ -171,6 +171,20 @@
           "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
         }
       }
+    },
+    "select_message": {
+      "name": "Open message in dashboard",
+      "description": "Loads a message into the 'Selected message' sensor, e.g. for a dashboard pop-up (Smartschool marks it as read).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "message_id": {
+          "name": "Message ID",
+          "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
+        }
+      }
     }
   },
   "selector": {

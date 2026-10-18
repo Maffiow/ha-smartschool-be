@@ -10,11 +10,12 @@ from homeassistant.const import CONF_USERNAME, PERCENTAGE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SmartschoolConfigEntry
-from .const import CONF_BASE_URL, DOMAIN
+from .const import CONF_BASE_URL, DOMAIN, SIGNAL_SELECTED_MESSAGE
 from .coordinator import (
     SmartschoolAgendaCoordinator,
     SmartschoolCoordinator,
@@ -149,6 +150,7 @@ async def async_setup_entry(
         static.append(
             SmartschoolUnreadMessagesSensor(runtime.messages, username, config_entry.entry_id)
         )
+        static.append(SmartschoolSelectedMessageSensor(runtime, config_entry.entry_id))
     if runtime.agenda is not None:
         static.append(
             SmartschoolUpcomingTasksSensor(runtime.agenda, username, config_entry.entry_id)
@@ -419,6 +421,7 @@ class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
         inbox = self._inbox()
         counters = (self.coordinator.data or {}).get("counters") or {}
         return {
+            "config_entry_id": self.coordinator.config_entry.entry_id,
             "totaal_in_inbox": counters.get("total", len(inbox)),
             "berichten": [
                 {
@@ -549,3 +552,53 @@ class SmartschoolStudentTitularSensor(SmartschoolStudentInfoSensor):
     @property
     def extra_state_attributes(self):
         return {"titularissen": self._titulars()}
+
+
+class SmartschoolSelectedMessageSensor(SensorEntity):
+    """The message last opened via smartschool_be.select_message (dashboard pop-up).
+
+    The text is plain text (never HTML), so a message can't inject markup into
+    the dashboard. Contents are kept out of the recorder.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_icon = "mdi:email-open-outline"
+    _attr_name = "Geselecteerd bericht"
+    _unrecorded_attributes = frozenset(
+        {"id", "van", "datum", "aan", "cc", "tekst", "bijlagen", "kan_antwoorden"}
+    )
+
+    def __init__(self, runtime, entry_id: str) -> None:
+        self._runtime = runtime
+        self._attr_unique_id = f"{DOMAIN}_{entry_id}_selected_message"
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_SELECTED_MESSAGE.format(self._runtime.entry_id),
+                self.async_write_ha_state,
+            )
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        message = self._runtime.selected_message
+        if not message:
+            return None
+        return (message.get("subject") or "(geen onderwerp)")[:255]
+
+    @property
+    def extra_state_attributes(self):
+        message = self._runtime.selected_message or {}
+        return {
+            "id": message.get("id"),
+            "van": message.get("from"),
+            "datum": message.get("date"),
+            "aan": message.get("to") or [],
+            "cc": message.get("cc") or [],
+            "tekst": message.get("text") or "",
+            "bijlagen": [a.get("name") for a in message.get("attachments") or []],
+            "kan_antwoorden": message.get("can_reply"),
+        }

@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
     ATTR_CONFIG_ENTRY_ID,
@@ -20,6 +21,8 @@ from .const import (
     ATTR_REPLY_ALL,
     ATTR_SUBJECT,
     DOMAIN,
+    SERVICE_SELECT_MESSAGE,
+    SIGNAL_SELECTED_MESSAGE,
 )
 from .smartschool_api import MESSAGE_FLAGS, SmartschoolError
 
@@ -99,6 +102,14 @@ def async_setup_services(hass: HomeAssistant) -> None:
         await data.messages.async_request_refresh()
         return message
 
+    async def select_message(call: ServiceCall) -> None:
+        """Load a message into the 'Geselecteerd bericht' sensor (dashboard pop-up)."""
+        data = _get_data(hass, call)
+        data.selected_message = await _run(hass, data.api.get_message, call.data[ATTR_MESSAGE_ID])
+        async_dispatcher_send(hass, SIGNAL_SELECTED_MESSAGE.format(data.entry_id))
+        # Opening a message marks it read on Smartschool.
+        await data.messages.async_request_refresh()
+
     async def reply_message(call: ServiceCall) -> None:
         data = _get_data(hass, call)
         await _run(
@@ -134,6 +145,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_GET_MESSAGE, get_message, schema=SCHEMA_MESSAGE,
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SELECT_MESSAGE, select_message, schema=SCHEMA_MESSAGE
     )
     hass.services.async_register(DOMAIN, SERVICE_REPLY_MESSAGE, reply_message, schema=SCHEMA_REPLY)
     hass.services.async_register(

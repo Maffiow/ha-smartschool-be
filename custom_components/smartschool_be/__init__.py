@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
@@ -22,6 +24,7 @@ from .const import (
     CONF_STUDENTS,
     CONF_TOTP_SECRET,
     DOMAIN,
+    FRONTEND_URL,
 )
 from .coordinator import (
     SmartschoolAgendaCoordinator,
@@ -42,11 +45,14 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 class SmartschoolData:
     """Runtime data of one Smartschool account; a disabled module is None."""
 
+    entry_id: str
     api: SmartschoolAPI
     session_store: Store
     results: SmartschoolCoordinator | None
     messages: SmartschoolMessagesCoordinator | None
     agenda: SmartschoolAgendaCoordinator | None
+    # The message last opened with smartschool_be.select_message (dashboard pop-up).
+    selected_message: dict[str, Any] | None = field(default=None)
 
 
 type SmartschoolConfigEntry = ConfigEntry[SmartschoolData]
@@ -60,15 +66,42 @@ def module_enabled(entry: ConfigEntry, option: str) -> bool:
 # unique_id fragments of the entities that belong to each module
 _MODULE_UNIQUE_IDS = {
     CONF_RESULTS: ("_latest_result", "_course_"),
-    CONF_MESSAGES: ("_unread_messages",),
+    CONF_MESSAGES: ("_unread_messages", "_selected_message"),
     CONF_STUDENTS: ("_student_",),
 }
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the integration-wide actions."""
+    """Register the integration-wide actions and the dashboard helper script."""
     async_setup_services(hass)
+    await _async_register_frontend(hass)
     return True
+
+
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    """Serve frontend/smartschool-be.js and load it on every dashboard.
+
+    It makes elements with data-ssbe-msg open a message pop-up. Skipped when
+    the http/frontend integrations are not loaded (e.g. in tests).
+    """
+    if hass.http is None or "frontend" not in hass.config.components:
+        return
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+
+    version = await hass.async_add_executor_job(_manifest_version)
+    path = Path(__file__).parent / "frontend" / "smartschool-be.js"
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(FRONTEND_URL, str(path), cache_headers=False)]
+    )
+    add_extra_js_url(hass, f"{FRONTEND_URL}?v={version}")
+
+
+def _manifest_version() -> str:
+    import json
+
+    manifest = Path(__file__).parent / "manifest.json"
+    return json.loads(manifest.read_text(encoding="utf-8")).get("version", "0")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SmartschoolConfigEntry) -> bool:
@@ -140,6 +173,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SmartschoolConfigEntry) 
             coordinator.session_store = session_store
 
     entry.runtime_data = SmartschoolData(
+        entry_id=entry.entry_id,
         api=api,
         session_store=session_store,
         results=results,

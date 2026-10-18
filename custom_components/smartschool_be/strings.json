@@ -171,6 +171,20 @@
           "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
         }
       }
+    },
+    "select_message": {
+      "name": "Bericht openen in dashboard",
+      "description": "Laadt een bericht in de sensor 'Geselecteerd bericht', bv. voor een popup in het dashboard (Smartschool markeert het als gelezen).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "message_id": {
+          "name": "Bericht-ID",
+          "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
+        }
+      }
     }
   },
   "selector": {
