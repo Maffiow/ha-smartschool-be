@@ -1,19 +1,29 @@
 """Smoke tests for the Smartschool BE integration."""
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from freezegun.api import FrozenDateTimeFactory
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
 
-from custom_components.smartschool_be.const import CONF_BASE_URL, CONF_BIRTHDAY, DOMAIN
+from custom_components.smartschool_be.const import (
+    CONF_BASE_URL,
+    CONF_BIRTHDAY,
+    DOMAIN,
+    EVENT_NEW_MESSAGE,
+)
 from custom_components.smartschool_be.smartschool_api import (
     SmartschoolAuthError,
     SmartschoolConnectionError,
+    SmartschoolError,
 )
 
 API = "custom_components.smartschool_be.smartschool_api.SmartschoolAPI"
@@ -54,25 +64,71 @@ EVALUATIONS = {
 STUDENTS = [{"userID": 42, "fullName": "Jan Peeters", "class": "3A ", "titu": []}]
 
 
+def _msg(msg_id, unread=True, subject="Uitstap"):
+    return {
+        "id": msg_id,
+        "from": "Lotte Peeters",
+        "subject": subject,
+        "date": "2026-10-18 08:24",
+        "unread": unread,
+        "attachments": 0,
+        "flag": "none",
+        "can_reply": True,
+    }
+
+
+INBOX = [_msg(2), _msg(1, unread=False)]
+HOURS = {"318": {"start": "08:25", "end": "09:15", "title": "1"}}
+
+
+def _today() -> str:
+    return dt_util.now().date().isoformat()
+
+
+def _tasks():
+    return [
+        {"date": _today(), "type": "Toets", "description": "H3 p42", "course": "AAR1",
+         "course_title": "AAR1", "hour_id": "318", "warning": False},
+        {"date": "2000-01-01", "type": "Taak", "description": "oud", "course": "FR",
+         "course_title": "FR", "hour_id": "318", "warning": False},
+    ]
+
+
+def _lessons(*_args):
+    return [
+        {"moment_id": "1", "date": _today(), "hour_id": "318", "course": "FR4",
+         "subject": "Prépositions", "classroom": "E.3.12", "teacher": "Ghysen H.", "note": None}
+    ]
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
+@pytest.fixture
+def mock_api():
+    """Patch every network-facing API method with happy-path data."""
+    with patch(f"{API}.login"), patch(
+        f"{API}.get_all_evaluations", return_value=EVALUATIONS
+    ), patch(f"{API}.get_students", return_value=STUDENTS), patch(
+        f"{API}.get_messages", return_value=list(INBOX)
+    ) as get_messages, patch(f"{API}.get_future_tasks", side_effect=_tasks), patch(
+        f"{API}.get_hours", return_value=HOURS
+    ), patch(f"{API}.get_lessons", side_effect=_lessons):
+        yield get_messages
+
+
 async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data=DATA, unique_id="x")
+    entry = MockConfigEntry(domain=DOMAIN, data=DATA, unique_id="x", title="Smartschool (jan.peeters)")
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
 
 
-async def test_setup_and_sensors(hass: HomeAssistant) -> None:
-    with patch(f"{API}.login"), patch(
-        f"{API}.get_all_evaluations", return_value=EVALUATIONS
-    ), patch(f"{API}.get_students", return_value=STUDENTS):
-        entry = await _setup(hass)
-
+async def test_setup_and_sensors(hass: HomeAssistant, mock_api) -> None:
+    entry = await _setup(hass)
     assert entry.state is ConfigEntryState.LOADED
 
     # Latest numeric-less score must give unknown, not a text state.
@@ -88,9 +144,99 @@ async def test_setup_and_sensors(hass: HomeAssistant) -> None:
     latest = hass.states.get("sensor.smartschool_laatste_resultaat_jan_peeters")
     assert latest.state == "H2"
 
+    unread = hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters")
+    assert unread.state == "1"
+    assert unread.attributes["berichten"][0]["id"] == 2
+
+    tasks = hass.states.get("sensor.smartschool_komende_taken_jan_peeters")
+    assert tasks.state == "1"  # the task in the past is not counted
+    assert tasks.attributes["aantal_toetsen"] == 1
+
     with patch(f"{API}.close") as close:
         assert await hass.config_entries.async_unload(entry.entry_id)
     close.assert_called_once()
+
+
+async def test_new_message_event(
+    hass: HomeAssistant, mock_api, freezer: FrozenDateTimeFactory
+) -> None:
+    events = []
+    hass.bus.async_listen(EVENT_NEW_MESSAGE, events.append)
+    await _setup(hass)
+    # Messages already in the inbox at the first poll are not "new".
+    assert events == []
+
+    mock_api.return_value = [_msg(3, subject="Oudercontact"), *INBOX]
+    freezer.tick(timedelta(minutes=6))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert len(events) == 1
+    assert events[0].data["message_id"] == 3
+    assert events[0].data["subject"] == "Oudercontact"
+    state = hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters")
+    assert state.state == "2"
+
+
+async def test_calendar(hass: HomeAssistant, mock_api) -> None:
+    await _setup(hass)
+    state = hass.states.get("calendar.smartschool_agenda_jan_peeters")
+    assert state is not None
+
+    start = dt_util.start_of_local_day()
+    result = await hass.services.async_call(
+        "calendar",
+        "get_events",
+        {"entity_id": state.entity_id, "start_date_time": start, "end_date_time": start + timedelta(days=1)},
+        blocking=True,
+        return_response=True,
+    )
+    events = result[state.entity_id]["events"]
+    summaries = {e["summary"] for e in events}
+    assert "FR4" in summaries
+    assert "Toets: AAR1" in summaries
+    lesson = next(e for e in events if e["summary"] == "FR4")
+    assert lesson["location"] == "E.3.12"
+    assert "08:25" in lesson["start"]
+
+
+async def test_message_actions(hass: HomeAssistant, mock_api) -> None:
+    await _setup(hass)
+
+    full = {"id": 2, "subject": "Uitstap", "text": "Beste ouders", "attachments": []}
+    with patch(f"{API}.get_message", return_value=full):
+        response = await hass.services.async_call(
+            DOMAIN, "get_message", {"message_id": 2}, blocking=True, return_response=True
+        )
+    assert response["text"] == "Beste ouders"
+
+    with patch(f"{API}.reply_message") as reply:
+        await hass.services.async_call(
+            DOMAIN, "reply_message", {"message_id": 2, "message": "Bedankt!"}, blocking=True
+        )
+    reply.assert_called_once_with(2, "Bedankt!", False, None)
+
+    with patch(f"{API}.set_message_flag") as flag:
+        await hass.services.async_call(
+            DOMAIN, "set_message_flag", {"message_id": 2, "flag": "red"}, blocking=True
+        )
+    flag.assert_called_once_with(2, "red")
+
+    with patch(f"{API}.send_message", side_effect=SmartschoolError("Meerdere ontvangers")):
+        with pytest.raises(HomeAssistantError, match="Meerdere ontvangers"):
+            await hass.services.async_call(
+                DOMAIN, "send_message",
+                {"recipient": "Peeters", "subject": "Vraag", "message": "Hallo"},
+                blocking=True,
+            )
+
+
+async def test_messages_failure_does_not_block_setup(hass: HomeAssistant, mock_api) -> None:
+    mock_api.side_effect = SmartschoolError("module uitgeschakeld")
+    entry = await _setup(hass)
+    assert entry.state is ConfigEntryState.LOADED
+    state = hass.states.get("sensor.smartschool_ongelezen_berichten_jan_peeters")
+    assert state.state == "unavailable"
 
 
 async def test_setup_retry_on_connection_error(hass: HomeAssistant) -> None:
@@ -108,9 +254,9 @@ async def test_auth_error_starts_reauth(hass: HomeAssistant) -> None:
     assert len(flows) == 1
     assert flows[0]["context"]["source"] == config_entries.SOURCE_REAUTH
 
-    with patch(f"{API}.login"), patch(
-        f"{API}.get_all_evaluations", return_value=EVALUATIONS
-    ), patch(f"{API}.get_students", return_value=STUDENTS):
+    with patch(f"{API}.login"), patch(f"{API}.close"), patch(
+        "custom_components.smartschool_be.async_setup_entry", return_value=True
+    ):
         result = await hass.config_entries.flow.async_configure(
             flows[0]["flow_id"], {CONF_PASSWORD: "new", CONF_BIRTHDAY: "2010-03-15"}
         )

@@ -1,0 +1,122 @@
+get_message:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    message_id:
+      required: true
+      example: 123456
+      selector:
+        number:
+          min: 1
+          mode: box
+reply_message:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    message_id:
+      required: true
+      example: 123456
+      selector:
+        number:
+          min: 1
+          mode: box
+    message:
+      required: true
+      example: Bedankt voor de info!
+      selector:
+        text:
+          multiline: true
+    reply_all:
+      default: false
+      selector:
+        boolean: null
+    subject:
+      selector:
+        text: null
+send_message:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    recipient:
+      required: true
+      example: Lotte Peeters
+      selector:
+        text: null
+    subject:
+      required: true
+      selector:
+        text: null
+    message:
+      required: true
+      selector:
+        text:
+          multiline: true
+mark_message_unread:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    message_id:
+      required: true
+      example: 123456
+      selector:
+        number:
+          min: 1
+          mode: box
+set_message_flag:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    message_id:
+      required: true
+      example: 123456
+      selector:
+        number:
+          min: 1
+          mode: box
+    flag:
+      required: true
+      selector:
+        select:
+          translation_key: flag
+          options:
+          - none
+          - green
+          - yellow
+          - red
+          - blue
+archive_message:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    message_id:
+      required: true
+      example: 123456
+      selector:
+        number:
+          min: 1
+          mode: box
+trash_message:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: smartschool_be
+    message_id:
+      required: true
+      example: 123456
+      selector:
+        number:
+          min: 1
+          mode: box

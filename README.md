@@ -14,6 +14,9 @@ Een onofficiële Home Assistant custom integratie om toetsresultaten en leerling
 - **Volledige scorehistory** als attribuut, inclusief toetsnaam, datum en feedback
 - **Gemiddelde score** per vak over het volledige schooljaar
 - **Laatste 5 resultaten** (alle vakken) op de overzichtssensor
+- **Berichten** — teller van ongelezen berichten, een event bij elk nieuw bericht, en acties om berichten te lezen, beantwoorden, versturen, markeren, archiveren of te verwijderen
+- **Agenda** — kalender met lessen (uur, lokaal, leerkracht) en taken/toetsen, plus een sensor met komende taken
+- **Diagnostics** — downloadbaar via de integratiepagina, zonder namen, punten of berichtinhoud
 - Grafiekklaar voor [ApexCharts Card](https://github.com/RomRider/apexcharts-card) — kleuren per drempelwaarde (rood/geel/groen)
 - Automatische herauthenticatie bij verlopen sessie
 - Gewijzigd wachtwoord of geboortedatum? Home Assistant toont een melding om opnieuw aan te melden (reauth)
@@ -109,6 +112,74 @@ De sensorwaarde (state) is de meest recente numerieke score (in %). Heeft de laa
 ]
 ```
 
+## Berichten
+
+### Sensor
+
+`sensor.smartschool_ongelezen_berichten_<gebruikersnaam>` — aantal ongelezen berichten in de inbox (elke 5 minuten bijgewerkt).
+
+| Attribuut | Beschrijving |
+|:----------|:-------------|
+| `totaal_in_inbox` | Aantal berichten in de inbox |
+| `berichten` | De 15 nieuwste berichten: `id`, `van`, `onderwerp`, `datum`, `ongelezen`, `bijlagen`, `vlag` |
+
+### Event bij een nieuw bericht
+
+Bij elk nieuw bericht vuurt de integratie het event `smartschool_be_new_message` met `message_id`, `from`, `subject`, `date`, `attachments`, `account` en `config_entry_id`. Berichten die al in de inbox stonden bij de eerste installatie tellen niet als nieuw.
+
+```yaml
+automation:
+  - alias: Smartschool bericht naar gsm
+    triggers:
+      - trigger: event
+        event_type: smartschool_be_new_message
+    actions:
+      - action: smartschool_be.get_message
+        data:
+          message_id: "{{ trigger.event.data.message_id }}"
+        response_variable: bericht
+      - action: notify.mobile_app_mijn_gsm
+        data:
+          title: "Smartschool: {{ trigger.event.data.from }}"
+          message: "{{ trigger.event.data.subject }} — {{ bericht.text[:200] }}"
+```
+
+### Acties
+
+| Actie | Wat het doet |
+|:------|:-------------|
+| `smartschool_be.get_message` | Geeft `from`, `subject`, `date`, `to`, `cc`, `text`, `html`, `can_reply` en `attachments` terug. Smartschool markeert het bericht dan als gelezen. |
+| `smartschool_be.reply_message` | Beantwoordt een bericht (`message`, optioneel `reply_all` en `subject`), zoals de knop *Beantwoorden*. |
+| `smartschool_be.send_message` | Stuurt een nieuw bericht naar één persoon (`recipient` = volledige naam, `subject`, `message`). Vindt Smartschool meerdere personen, dan wordt er niets verstuurd. |
+| `smartschool_be.mark_message_unread` | Markeert een bericht als ongelezen. |
+| `smartschool_be.set_message_flag` | Zet een vlag: `none`, `green`, `yellow`, `red` of `blue`. |
+| `smartschool_be.archive_message` | Verplaatst een bericht naar het archief. |
+| `smartschool_be.trash_message` | Verplaatst een bericht naar de prullenbak (herstelbaar in Smartschool). |
+
+Heb je meerdere accounts ingesteld, geef dan `config_entry_id` mee.
+
+```yaml
+action: smartschool_be.reply_message
+data:
+  message_id: 123456
+  message: |
+    Dag juf,
+
+    Bedankt voor de info, we zijn er bij!
+```
+
+> Antwoorden en versturen gebeuren met de gewone tekst; nieuwe regels worden behouden. Bijlagen meesturen kan (nog) niet.
+> Bevestigt Smartschool het verzenden niet, dan geeft de actie een fout. Kijk dan eerst bij *Verzonden* voor je opnieuw verstuurt.
+
+## Agenda
+
+- `calendar.smartschool_agenda_<gebruikersnaam>` — lessen met begin- en einduur, lokaal, leerkracht en lesonderwerp, plus taken en toetsen als hele-dag-items. Werkt met de kalenderkaart en kalender-automatiseringen.
+- `sensor.smartschool_komende_taken_<gebruikersnaam>` — aantal komende taken en toetsen, met attributen `volgende_datum`, `aantal_toetsen`, `volgende_toets` en de lijst `taken`.
+
+De agenda wordt elk uur bijgewerkt; de kalenderweergave haalt lessen op voor de periode die je bekijkt.
+
+Kan je school berichten of de agenda niet aanbieden voor jouw account, dan worden enkel die entiteiten *niet beschikbaar*; de resultaten blijven werken.
+
 ## Dashboard
 
 De vaksensoren zijn direct bruikbaar met [ApexCharts Card](https://github.com/RomRider/apexcharts-card) (via HACS).
@@ -171,7 +242,7 @@ content: |-
 
 ## Opmerkingen
 
-- De integratie pollt standaard elke **15 minuten**
+- Resultaten worden elke **15 minuten** opgehaald, berichten elke **5 minuten**, de agenda elk **uur**
 - Smartschool vergt een account-verificatie (geboortedatum) bij elke nieuwe sessie; dit is ingebouwd en automatisch
 - Per API-aanroep worden maximaal 50 resultaten per pagina opgehaald; alle pagina's worden doorlopen
 - Deze integratie is **niet officieel** en heeft geen band met Smartschool/Scala BVBA

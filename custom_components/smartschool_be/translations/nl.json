@@ -31,5 +31,148 @@
       "already_configured": "Deze account is al geconfigureerd",
       "reauth_successful": "Opnieuw aanmelden gelukt"
     }
+  },
+  "services": {
+    "get_message": {
+      "name": "Bericht lezen",
+      "description": "Haalt de volledige inhoud van een bericht op (Smartschool markeert het als gelezen).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "message_id": {
+          "name": "Bericht-ID",
+          "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
+        }
+      }
+    },
+    "reply_message": {
+      "name": "Bericht beantwoorden",
+      "description": "Beantwoordt een bericht, zoals de knop Beantwoorden in Smartschool.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "message_id": {
+          "name": "Bericht-ID",
+          "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
+        },
+        "message": {
+          "name": "Tekst",
+          "description": "De tekst van je antwoord."
+        },
+        "reply_all": {
+          "name": "Allen beantwoorden",
+          "description": "Stuur het antwoord naar alle ontvangers."
+        },
+        "subject": {
+          "name": "Onderwerp",
+          "description": "Optioneel; standaard het onderwerp dat Smartschool voorstelt (Re: ...)."
+        }
+      }
+    },
+    "send_message": {
+      "name": "Bericht sturen",
+      "description": "Stuurt een nieuw bericht naar één persoon, gezocht op naam.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "recipient": {
+          "name": "Ontvanger",
+          "description": "Volledige naam zoals in Smartschool; bij meerdere treffers wordt niets verstuurd."
+        },
+        "subject": {
+          "name": "Onderwerp",
+          "description": "Onderwerp van het bericht."
+        },
+        "message": {
+          "name": "Tekst",
+          "description": "De tekst van het bericht."
+        }
+      }
+    },
+    "mark_message_unread": {
+      "name": "Markeren als ongelezen",
+      "description": "Markeert een bericht opnieuw als ongelezen.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "message_id": {
+          "name": "Bericht-ID",
+          "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
+        }
+      }
+    },
+    "set_message_flag": {
+      "name": "Vlag instellen",
+      "description": "Zet een gekleurde vlag op een bericht.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "message_id": {
+          "name": "Bericht-ID",
+          "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
+        },
+        "flag": {
+          "name": "Vlag",
+          "description": "De kleur van de vlag, of geen."
+        }
+      }
+    },
+    "archive_message": {
+      "name": "Archiveren",
+      "description": "Verplaatst een bericht naar het archief.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "message_id": {
+          "name": "Bericht-ID",
+          "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
+        }
+      }
+    },
+    "trash_message": {
+      "name": "Naar prullenbak",
+      "description": "Verplaatst een bericht naar de prullenbak (herstelbaar in Smartschool).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Het Smartschool-account (alleen nodig als je er meerdere hebt)."
+        },
+        "message_id": {
+          "name": "Bericht-ID",
+          "description": "ID van het bericht, bv. uit het event smartschool_be_new_message of het attribuut berichten."
+        }
+      }
+    }
+  },
+  "selector": {
+    "flag": {
+      "options": {
+        "none": "Geen",
+        "green": "Groen",
+        "yellow": "Geel",
+        "red": "Rood",
+        "blue": "Blauw"
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "Geen geladen Smartschool-account gevonden."
+    },
+    "multiple_entries": {
+      "message": "Er zijn meerdere Smartschool-accounts; kies er een met config_entry_id."
+    }
   }
 }

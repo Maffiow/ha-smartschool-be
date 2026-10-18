@@ -8,13 +8,19 @@ import re
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.const import CONF_USERNAME, PERCENTAGE
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SmartschoolConfigEntry
 from .const import CONF_BASE_URL, DOMAIN
-from .coordinator import SmartschoolCoordinator
+from .coordinator import (
+    SmartschoolAgendaCoordinator,
+    SmartschoolCoordinator,
+    SmartschoolMessagesCoordinator,
+)
+from .entity import account_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +65,13 @@ async def async_setup_entry(
     """Set up Smartschool sensors from a config entry."""
     base_url = config_entry.data[CONF_BASE_URL]
     username = config_entry.data[CONF_USERNAME]
-    coordinator = config_entry.runtime_data
+    coordinator = config_entry.runtime_data.results
+    device_info = account_device_info(config_entry)
+
+    def _with_device(entities: list[SensorEntity]) -> list[SensorEntity]:
+        for entity in entities:
+            entity._attr_device_info = device_info
+        return entities
 
     known_courses: set[str] = set()
     known_students: set[int] = set()
@@ -80,7 +92,7 @@ async def async_setup_entry(
         _LOGGER.debug("Adding sensors for new courses: %s", new_courses)
 
         async_add_entities(
-            [
+            _with_device([
                 SmartschoolCourseSensor(
                     coordinator,
                     course,
@@ -88,7 +100,7 @@ async def async_setup_entry(
                     config_entry.entry_id,
                 )
                 for course in sorted(new_courses)
-            ]
+            ])
         )
 
     @callback
@@ -128,13 +140,23 @@ async def async_setup_entry(
     config_entry.async_on_unload(coordinator.async_add_listener(_add_new_student_sensors))
 
     async_add_entities(
-        [
+        _with_device([
             SmartschoolLatestResultSensor(
                 coordinator,
                 username,
                 config_entry.entry_id,
-            )
-        ]
+            ),
+            SmartschoolUnreadMessagesSensor(
+                config_entry.runtime_data.messages,
+                username,
+                config_entry.entry_id,
+            ),
+            SmartschoolUpcomingTasksSensor(
+                config_entry.runtime_data.agenda,
+                username,
+                config_entry.entry_id,
+            ),
+        ])
     )
 
     _add_new_course_sensors()
@@ -349,4 +371,98 @@ class SmartschoolStudentInfoSensor(CoordinatorEntity, SensorEntity):
             "current_account": student.get("currentAccount"),
             "status": student.get("status"),
             "is_current_user": student.get("isCurrentUser"),
+        }
+
+
+class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
+    """Number of unread messages in the inbox."""
+
+    _attr_icon = "mdi:email-outline"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "berichten"
+    _unrecorded_attributes = frozenset({"berichten"})
+
+    def __init__(
+        self, coordinator: SmartschoolMessagesCoordinator, username: str, entry_id: str
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"Smartschool Ongelezen Berichten ({username})"
+        self._attr_unique_id = f"{DOMAIN}_{entry_id}_unread_messages"
+
+    def _inbox(self) -> list[dict]:
+        return (self.coordinator.data or {}).get("inbox") or []
+
+    @property
+    def native_value(self) -> int:
+        return sum(1 for m in self._inbox() if m["unread"])
+
+    @property
+    def icon(self) -> str:
+        return "mdi:email-alert" if self.native_value else "mdi:email-outline"
+
+    @property
+    def extra_state_attributes(self):
+        inbox = self._inbox()
+        return {
+            "totaal_in_inbox": len(inbox),
+            "berichten": [
+                {
+                    "id": m["id"],
+                    "van": m["from"],
+                    "onderwerp": m["subject"],
+                    "datum": m["date"],
+                    "ongelezen": m["unread"],
+                    "bijlagen": m["attachments"],
+                    "vlag": m["flag"],
+                }
+                for m in inbox[:15]
+            ],
+        }
+
+
+class SmartschoolUpcomingTasksSensor(CoordinatorEntity, SensorEntity):
+    """Number of upcoming tasks and tests (Smartschool 'Taken en toetsen')."""
+
+    _attr_icon = "mdi:clipboard-text-clock"
+    _attr_native_unit_of_measurement = "taken"
+    _unrecorded_attributes = frozenset({"taken"})
+
+    def __init__(
+        self, coordinator: SmartschoolAgendaCoordinator, username: str, entry_id: str
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"Smartschool Komende Taken ({username})"
+        self._attr_unique_id = f"{DOMAIN}_{entry_id}_upcoming_tasks"
+
+    def _tasks(self) -> list[dict]:
+        today = dt_util.now().date().isoformat()
+        tasks = (self.coordinator.data or {}).get("tasks") or []
+        return sorted(
+            (t for t in tasks if (t.get("date") or "") >= today),
+            key=lambda t: t.get("date") or "",
+        )
+
+    @property
+    def native_value(self) -> int:
+        return len(self._tasks())
+
+    @property
+    def extra_state_attributes(self):
+        tasks = self._tasks()
+        tests = [t for t in tasks if "toets" in (t.get("type") or "").lower()]
+        return {
+            "volgende_datum": tasks[0]["date"] if tasks else None,
+            "aantal_toetsen": len(tests),
+            "volgende_toets": (
+                f"{tests[0]['date']} {tests[0]['course']}: {tests[0]['description']}" if tests else None
+            ),
+            "taken": [
+                {
+                    "datum": t.get("date"),
+                    "type": t.get("type"),
+                    "vak": t.get("course"),
+                    "omschrijving": t.get("description"),
+                }
+                for t in tasks
+            ],
         }

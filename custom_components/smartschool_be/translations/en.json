@@ -31,5 +31,148 @@
       "already_configured": "This account is already configured",
       "reauth_successful": "Re-authentication was successful"
     }
+  },
+  "services": {
+    "get_message": {
+      "name": "Read message",
+      "description": "Fetches the full content of a message (Smartschool marks it as read).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "message_id": {
+          "name": "Message ID",
+          "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
+        }
+      }
+    },
+    "reply_message": {
+      "name": "Reply to message",
+      "description": "Replies to a message, like the Reply button in Smartschool.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "message_id": {
+          "name": "Message ID",
+          "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
+        },
+        "message": {
+          "name": "Text",
+          "description": "The text of your reply."
+        },
+        "reply_all": {
+          "name": "Reply all",
+          "description": "Send the reply to all recipients."
+        },
+        "subject": {
+          "name": "Subject",
+          "description": "Optional; defaults to the subject Smartschool suggests (Re: ...)."
+        }
+      }
+    },
+    "send_message": {
+      "name": "Send message",
+      "description": "Sends a new message to one person, searched by name.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "recipient": {
+          "name": "Recipient",
+          "description": "Full name as shown in Smartschool; nothing is sent when several people match."
+        },
+        "subject": {
+          "name": "Subject",
+          "description": "Subject of the message."
+        },
+        "message": {
+          "name": "Text",
+          "description": "The text of the message."
+        }
+      }
+    },
+    "mark_message_unread": {
+      "name": "Mark as unread",
+      "description": "Marks a message as unread again.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "message_id": {
+          "name": "Message ID",
+          "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
+        }
+      }
+    },
+    "set_message_flag": {
+      "name": "Set flag",
+      "description": "Puts a coloured flag on a message.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "message_id": {
+          "name": "Message ID",
+          "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
+        },
+        "flag": {
+          "name": "Flag",
+          "description": "The flag colour, or none."
+        }
+      }
+    },
+    "archive_message": {
+      "name": "Archive",
+      "description": "Moves a message to the archive.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "message_id": {
+          "name": "Message ID",
+          "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
+        }
+      }
+    },
+    "trash_message": {
+      "name": "Move to trash",
+      "description": "Moves a message to the trash (recoverable in Smartschool).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Smartschool account (only needed when you have several)."
+        },
+        "message_id": {
+          "name": "Message ID",
+          "description": "ID of the message, e.g. from the smartschool_be_new_message event or the berichten attribute."
+        }
+      }
+    }
+  },
+  "selector": {
+    "flag": {
+      "options": {
+        "none": "None",
+        "green": "Green",
+        "yellow": "Yellow",
+        "red": "Red",
+        "blue": "Blue"
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "No loaded Smartschool account found."
+    },
+    "multiple_entries": {
+      "message": "Several Smartschool accounts are set up; pick one with config_entry_id."
+    }
   }
 }

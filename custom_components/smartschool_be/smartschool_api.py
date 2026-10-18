@@ -1,13 +1,76 @@
 """Smartschool API client."""
+import html as html_lib
 import json
 import logging
 import re
+import threading
+import time
+from datetime import date, datetime, timedelta
 from html import unescape
+from typing import Any
+from xml.etree import ElementTree as ET
+from xml.sax.saxutils import quoteattr
 
 import requests
 from bs4 import BeautifulSoup
 
 _LOGGER = logging.getLogger(__name__)
+
+# Smartschool message flags ("labels") as used by the web client.
+MESSAGE_FLAGS = {"none": 0, "green": 1, "yellow": 2, "red": 3, "blue": 4}
+
+_MESSAGES_DISPATCHER = "/?module=Messages&file=dispatcher"
+_AGENDA_DISPATCHER = "/?module=Agenda&file=dispatcher"
+_SEND_ERROR_MARKERS = ("var error", "type='error'", 'type="error"')
+_WINDOW_CLOSE_RE = re.compile(r"\bwindow\.close\s*\(\s*\)")
+
+
+class _SessionExpired(Exception):
+    """Internal: Smartschool answered with a login/verification page."""
+
+
+def _truthy(value: Any) -> bool:
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _el_to_dict(element: ET.Element) -> dict:
+    """Convert a flat-ish XML element into a dict.
+
+    Leaf children become strings; children that only hold repeated leaves
+    (e.g. <receivers><to>A</to><to>B</to></receivers>) become lists.
+    """
+    result: dict[str, Any] = {}
+    for child in element:
+        if len(child) == 0:
+            result[child.tag] = (child.text or "").strip()
+        elif all(len(grandchild) == 0 for grandchild in child):
+            result[child.tag] = [(grandchild.text or "").strip() for grandchild in child]
+        else:
+            result[child.tag] = _el_to_dict(child)
+    return result
+
+
+def html_to_text(value: str | None) -> str:
+    """Render message HTML as plain text."""
+    if not value:
+        return ""
+    soup = BeautifulSoup(value, "html.parser")
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    for block in soup.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6"]):
+        block.append("\n\n")
+    for block in soup.find_all(["div", "li", "tr"]):
+        block.append("\n")
+    text = soup.get_text()
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def text_to_html(value: str) -> str:
+    """Turn plain text (with newlines) into simple message HTML."""
+    paragraphs = [p for p in re.split(r"\n\s*\n", value.strip()) if p.strip()]
+    return "".join(
+        "<p>" + html_lib.escape(p.strip()).replace("\n", "<br>") + "</p>" for p in paragraphs
+    )
 
 
 class SmartschoolError(Exception):
@@ -41,6 +104,9 @@ class SmartschoolAPI:
         self._students_url = f"{self._base_url}/Studentcard/Student/getStudents"
         self._session = requests.Session()
         self._is_logged_in = False
+        # Coordinators and actions run in executor threads; serialize all
+        # calls so they never race on the shared login session.
+        self.lock = threading.RLock()
 
         self._session.headers.update(
             {
@@ -488,3 +554,485 @@ class SmartschoolAPI:
                 _LOGGER.debug("Students API re-login/retry failed: %s", err)
 
         return students or []
+
+
+    # ------------------------------------------------------------------
+    # Generic request helpers (messages / agenda)
+    # ------------------------------------------------------------------
+
+    def _with_relogin(self, func, *args, **kwargs):
+        """Run func; when the session turned out to be expired, log in again once."""
+        with self.lock:
+            if not self._is_logged_in:
+                self.login()
+            try:
+                return func(*args, **kwargs)
+            except _SessionExpired:
+                self._force_relogin()
+                try:
+                    return func(*args, **kwargs)
+                except _SessionExpired as err:
+                    raise SmartschoolAuthError("Sessie verloren na opnieuw aanmelden") from err
+            except requests.exceptions.RequestException as err:
+                raise SmartschoolConnectionError(str(err)) from err
+
+    def _check_session(self, response: requests.Response) -> None:
+        if self._is_account_verification_page(response) or (
+            "/login" in (response.url or "")
+        ):
+            raise _SessionExpired
+
+    def _xml_command(self, path: str, subsystem: str, action: str, params: dict) -> ET.Element:
+        """POST a Smartschool XML dispatcher command and return the parsed root."""
+        command = "<request><command>"
+        command += f"<subsystem>{subsystem}</subsystem><action>{action}</action><params>"
+        for key, value in params.items():
+            command += f"<param name={quoteattr(str(key))}><![CDATA[{value}]]></param>"
+        command += "</params></command></request>"
+
+        resp = self._session.post(
+            f"{self._base_url}{path}",
+            data={"command": command},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        self._check_session(resp)
+
+        text = (resp.text or "").strip()
+        if not text:
+            return ET.Element("server")
+        if not text.startswith("<?xml") and not text.startswith("<server"):
+            # An HTML page instead of XML means we were bounced to a login page.
+            raise _SessionExpired
+        root = ET.fromstring(text)
+        if root.findtext(".//status") == "error":
+            raise SmartschoolError(root.findtext(".//message") or "Onbekende fout")
+        return root
+
+    def _get_json(self, path: str, method: str = "get", **kwargs) -> Any:
+        resp = self._session.request(
+            method,
+            f"{self._base_url}{path}",
+            headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"},
+            timeout=20,
+            **kwargs,
+        )
+        resp.raise_for_status()
+        self._check_session(resp)
+        if "json" not in (resp.headers.get("Content-Type") or "").lower():
+            raise _SessionExpired
+        data = resp.json()
+        # Some endpoints answer with a JSON-encoded string.
+        if isinstance(data, str):
+            data = json.loads(data)
+        return data
+
+    # ------------------------------------------------------------------
+    # Messages
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_header(raw: dict) -> dict:
+        return {
+            "id": int(raw.get("id") or 0),
+            "from": raw.get("from"),
+            "subject": raw.get("subject"),
+            "date": raw.get("date"),
+            "unread": _truthy(raw.get("unread")),
+            "attachments": int(raw.get("attachment") or 0),
+            "flag": next(
+                (k for k, v in MESSAGE_FLAGS.items() if str(v) == str(raw.get("label") or "0")),
+                "none",
+            ),
+            "can_reply": _truthy(raw.get("allowreply")),
+        }
+
+    def get_messages(self, box: str = "inbox") -> list[dict]:
+        """Return the message headers of a box (newest first)."""
+
+        def _fetch():
+            root = self._xml_command(
+                _MESSAGES_DISPATCHER,
+                "postboxes",
+                "message list",
+                {
+                    "boxType": box,
+                    "boxID": "0",
+                    "sortField": "date",
+                    "sortKey": "desc",
+                    "poll": "false",
+                    "poll_ids": "",
+                    "layout": "new",
+                },
+            )
+            return [
+                self._normalize_header(_el_to_dict(el))
+                for el in root.findall(".//messages/message")
+            ]
+
+        return self._with_relogin(_fetch)
+
+    def get_message(self, msg_id: int, box: str = "inbox") -> dict:
+        """Return one full message (Smartschool marks it as read)."""
+
+        def _fetch():
+            root = self._xml_command(
+                _MESSAGES_DISPATCHER,
+                "postboxes",
+                "show message",
+                {"msgID": msg_id, "boxType": box, "limitList": "true"},
+            )
+            el = root.find(".//data/message")
+            if el is None:
+                raise SmartschoolError(f"Bericht {msg_id} niet gevonden")
+            raw = _el_to_dict(el)
+
+            attachments = []
+            if (raw.get("attachment") or "0") not in ("", "0"):
+                att_root = self._xml_command(
+                    _MESSAGES_DISPATCHER,
+                    "postboxes",
+                    "attachment list",
+                    {"msgID": msg_id, "boxType": box, "limitList": "true"},
+                )
+                for att in att_root.findall(".//attachmentlist/attachment"):
+                    a = _el_to_dict(att)
+                    attachments.append({"name": a.get("name"), "size": a.get("size"), "mime": a.get("mime")})
+            return raw, attachments
+
+        raw, attachments = self._with_relogin(_fetch)
+
+        def _as_list(value):
+            if isinstance(value, list):
+                return value
+            return [value] if value else []
+
+        body_html = raw.get("body") or ""
+        return {
+            "id": int(raw.get("id") or msg_id),
+            "from": raw.get("from"),
+            "subject": raw.get("subject"),
+            "date": raw.get("date"),
+            "to": _as_list(raw.get("receivers")),
+            "cc": _as_list(raw.get("ccreceivers")),
+            "text": html_to_text(body_html),
+            "html": body_html,
+            "can_reply": _truthy(raw.get("canReply")),
+            "attachments": attachments,
+        }
+
+    def mark_message_unread(self, msg_id: int, box: str = "inbox") -> None:
+        self._with_relogin(
+            self._xml_command,
+            _MESSAGES_DISPATCHER,
+            "postboxes",
+            "mark message unread",
+            {"boxType": box, "boxID": "0", "msgID": msg_id, "clAction": "status"},
+        )
+
+    def set_message_flag(self, msg_id: int, flag: str, box: str = "inbox") -> None:
+        if flag not in MESSAGE_FLAGS:
+            raise ValueError(f"Onbekende vlag: {flag}")
+        self._with_relogin(
+            self._xml_command,
+            _MESSAGES_DISPATCHER,
+            "postboxes",
+            "save msglabel",
+            {"boxType": box, "msgLabel": MESSAGE_FLAGS[flag], "msgID": msg_id, "clAction": "label"},
+        )
+
+    def trash_message(self, msg_id: int) -> None:
+        """Move a message to the trash (it stays recoverable in Smartschool)."""
+        self._with_relogin(
+            self._xml_command, _MESSAGES_DISPATCHER, "postboxes", "quick delete", {"msgID": msg_id}
+        )
+
+    def archive_message(self, msg_id: int) -> None:
+        def _post():
+            resp = self._session.post(
+                f"{self._base_url}/Messages/Xhr/archivemessages",
+                data={"msgIDs[]": [msg_id]},
+                headers={"X-Requested-With": "XMLHttpRequest"},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            self._check_session(resp)
+            try:
+                success = resp.json().get("success") or []
+            except ValueError as err:
+                raise _SessionExpired from err
+            if int(msg_id) not in [int(x) for x in success]:
+                raise SmartschoolError(f"Archiveren van bericht {msg_id} mislukt")
+
+        self._with_relogin(_post)
+
+    # --- composing ----------------------------------------------------
+
+    def _compose_url(self, box: str, compose_type: int, msg_id: int | str) -> str:
+        return (
+            f"{self._base_url}/?module=Messages&file=composeMessage"
+            f"&boxType={box}&composeType={compose_type}&msgID={msg_id}"
+        )
+
+    def _load_compose_form(self, url: str) -> tuple[dict, str]:
+        resp = self._session.get(url, timeout=20)
+        resp.raise_for_status()
+        self._check_session(resp)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        hidden = {
+            str(inp["name"]): str(inp.get("value", ""))
+            for inp in soup.select("input[type=hidden][name]")
+        }
+        subject_input = soup.find("input", {"name": "subject"})
+        subject = str(subject_input.get("value", "")) if subject_input else ""
+        if not hidden.get("uniqueUsc"):
+            raise SmartschoolError(
+                "Het berichtenformulier kon niet geladen worden (geen rechten om berichten te sturen?)"
+            )
+        return hidden, subject
+
+    def _submit_compose_form(
+        self, url: str, hidden: dict, box: str, compose_type: int, msg_id: int | str,
+        subject: str, body_html: str, default_action: str,
+    ) -> None:
+        payload = {
+            "module": "Messages",
+            "file": "composeMessage",
+            "boxType": box,
+            "composeType": str(compose_type),
+            "msgID": str(msg_id),
+            "encryptedSender": hidden.get("encryptedSender", ""),
+            "send": "send",
+            "origMsgID": hidden.get("origMsgID", "0"),
+            "composeAction": hidden.get("composeAction", default_action),
+            "randomDir": hidden.get("randomDir", ""),
+            "uniqueUsc": hidden.get("uniqueUsc", ""),
+            "showTab": hidden.get("showTab", "tab1Container"),
+            "delFile": hidden.get("delFile", "0"),
+            "msgFormSelectedTab": hidden.get("msgFormSelectedTab", ""),
+            "sendDate": hidden.get("sendDate", ""),
+            "searchField3": "",
+            "searchField1": "",
+            "searchField4": "",
+            "searchField5": "",
+            "subject": subject,
+            "copyToLVS": "dontCopyToLVS",
+            "message": body_html,
+            "bcc": "0",
+        }
+        try:
+            resp = self._session.post(
+                url, files={k: (None, v) for k, v in payload.items()}, timeout=30
+            )
+        except requests.exceptions.RequestException as err:
+            # Never retry a send: it may have gone out already.
+            raise SmartschoolError(
+                f"Geen antwoord van Smartschool na verzenden ({err}); controleer 'Verzonden' voor je opnieuw verstuurt."
+            ) from err
+
+        body = resp.text or ""
+        confirmed = (
+            resp.status_code == 200
+            and not any(marker in body for marker in _SEND_ERROR_MARKERS)
+            and any(
+                _WINDOW_CLOSE_RE.search(script.get_text() or "")
+                for script in BeautifulSoup(body, "html.parser").find_all("script")
+            )
+        )
+        if not confirmed:
+            raise SmartschoolError(
+                f"Smartschool bevestigde het verzenden niet (HTTP {resp.status_code}); "
+                "controleer 'Verzonden' voor je opnieuw verstuurt."
+            )
+
+    def reply_message(
+        self, msg_id: int, text: str, reply_all: bool = False, subject: str | None = None,
+        box: str = "inbox",
+    ) -> None:
+        """Reply to a message as the Reply (all) button does."""
+        compose_type = 2 if reply_all else 1
+        url = self._compose_url(box, compose_type, msg_id)
+
+        def _load():
+            hidden, form_subject = self._load_compose_form(url)
+            if hidden.get("origMsgID") != str(msg_id):
+                raise SmartschoolError(f"Bericht {msg_id} kan niet beantwoord worden")
+            return hidden, form_subject
+
+        with self.lock:
+            hidden, form_subject = self._with_relogin(_load)
+            final_subject = subject or form_subject
+            if not final_subject:
+                original = self.get_message(msg_id, box)
+                final_subject = f"Re: {original.get('subject') or ''}".strip()
+            # The form's tokens belong to this session: submit without re-login.
+            self._submit_compose_form(
+                url, hidden, box, compose_type, msg_id, final_subject, text_to_html(text), "2"
+            )
+
+    def search_recipients(self, query: str, unique_usc: str) -> list[dict]:
+        resp = self._session.post(
+            f"{self._base_url}/?module=Messages&file=searchUsers",
+            data={
+                "val": query,
+                "type": "0",
+                "parentNodeId": "insertSearchFieldContainer_0_0",
+                "xml": "<results></results>",
+                "uniqueUsc": unique_usc,
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        self._check_session(resp)
+        root = ET.fromstring((resp.text or "<results/>").strip())
+        users = []
+        for user in root.findall("./users/user"):
+            u = _el_to_dict(user)
+            users.append(
+                {
+                    "user_id": u.get("userID"),
+                    "name": u.get("value"),
+                    "ss_id": u.get("ssID"),
+                    "user_lt": u.get("userLT") or "0",
+                    "class": u.get("classname") or None,
+                }
+            )
+        return users
+
+    def send_message(self, recipient: str, subject: str, text: str) -> str:
+        """Send a new message to exactly one person found by name; returns their name."""
+        url = self._compose_url("inbox", 0, "undefined")
+
+        with self.lock:
+            hidden, _ = self._with_relogin(self._load_compose_form, url)
+            try:
+                users = self.search_recipients(recipient, hidden["uniqueUsc"])
+            except requests.exceptions.RequestException as err:
+                raise SmartschoolConnectionError(str(err)) from err
+
+            exact = [u for u in users if (u["name"] or "").casefold() == recipient.casefold()]
+            matches = exact or users
+            if not matches:
+                raise SmartschoolError(f"Geen ontvanger gevonden voor '{recipient}'")
+            if len(matches) > 1:
+                names = ", ".join(u["name"] or "?" for u in matches[:10])
+                raise SmartschoolError(
+                    f"Meerdere ontvangers gevonden voor '{recipient}': {names}. Gebruik de volledige naam."
+                )
+            user = matches[0]
+
+            resp = self._session.post(
+                f"{self._base_url}/?module=Messages&file=searchUsers&function=addUserToSelected",
+                data={
+                    "id": str(user["user_id"]),
+                    "typeId": "users",
+                    "type": "0",
+                    "parentNodeId": "insertSearchFieldContainer_0_0",
+                    "ssid": str(user["ss_id"]),
+                    "userlt": str(user["user_lt"]),
+                    "uniqueUsc": hidden["uniqueUsc"],
+                },
+                timeout=20,
+            )
+            resp.raise_for_status()
+            if str(user["user_id"]) not in (resp.text or ""):
+                raise SmartschoolError(f"Smartschool weigerde ontvanger '{user['name']}'")
+
+            self._submit_compose_form(
+                url, hidden, "inbox", 0, "undefined", subject, text_to_html(text), "0"
+            )
+            return user["name"]
+
+    # ------------------------------------------------------------------
+    # Agenda: lessons, hours and upcoming tasks
+    # ------------------------------------------------------------------
+
+    def get_future_tasks(self) -> list[dict]:
+        """Return upcoming tasks/tests, one dict per task."""
+
+        def _fetch():
+            data = self._get_json(
+                "/Agenda/Futuretasks/getFuturetasks",
+                method="post",
+                data={"lastAssignmentID": 0, "lastDate": "", "filterType": "false", "filterID": "false"},
+            )
+            tasks = []
+            for day in (data or {}).get("days", []):
+                for course in day.get("courses", []):
+                    for task in (course.get("items") or {}).get("tasks", []):
+                        tasks.append(
+                            {
+                                "date": task.get("date") or day.get("date"),
+                                "type": task.get("label"),
+                                "description": task.get("description"),
+                                "course": task.get("course"),
+                                "course_title": course.get("course_title"),
+                                "hour_id": task.get("hourID") or course.get("hourID"),
+                                "warning": bool(task.get("warning")),
+                            }
+                        )
+            return tasks
+
+        return self._with_relogin(_fetch)
+
+    def get_hours(self) -> dict[str, dict]:
+        """Return lesson periods keyed by hourID: {start, end, title}."""
+
+        def _fetch():
+            root = self._xml_command(
+                _AGENDA_DISPATCHER, "grid", "get hours", {"date": int(time.time())}
+            )
+            hours = {}
+            for el in root.findall(".//hour"):
+                h = _el_to_dict(el)
+                hours[h.get("hourID")] = {"start": h.get("start"), "end": h.get("end"), "title": h.get("title")}
+            return hours
+
+        return self._with_relogin(_fetch)
+
+    def get_lessons(self, start: date, end: date) -> list[dict]:
+        """Return lessons between start and end (inclusive), max 20 days per call."""
+
+        def _fetch(chunk_start: date, chunk_end: date):
+            start_ts = int(datetime.combine(chunk_start, datetime.min.time()).timestamp())
+            end_ts = int(datetime.combine(chunk_end, datetime.max.time()).timestamp())
+            root = self._xml_command(
+                _AGENDA_DISPATCHER,
+                "agenda",
+                "get lessons",
+                {
+                    "startDateTimestamp": start_ts,
+                    "endDateTimestamp": end_ts,
+                    "filterType": "false",
+                    "filterID": "false",
+                    "gridType": "1",
+                    "classID": "0",
+                    "endDateTimestampOld": end_ts,
+                    "forcedTeacher": "0",
+                    "forcedClass": "0",
+                    "forcedClassroom": "0",
+                    "assignmentTypeID": "1",
+                },
+            )
+            return [_el_to_dict(el) for el in root.findall(".//lesson")]
+
+        lessons: list[dict] = []
+        cursor = start
+        while cursor <= end:
+            chunk_end = min(end, cursor + timedelta(days=19))
+            for raw in self._with_relogin(_fetch, cursor, chunk_end):
+                lessons.append(
+                    {
+                        "moment_id": raw.get("momentID"),
+                        "date": raw.get("date"),
+                        "hour_id": raw.get("hourID"),
+                        "course": raw.get("courseTitle") or raw.get("course"),
+                        "subject": raw.get("subject") or None,
+                        "classroom": raw.get("classroomTitle") or raw.get("classroom") or None,
+                        "teacher": raw.get("teacher") or None,
+                        "note": raw.get("note") or None,
+                    }
+                )
+            cursor = chunk_end + timedelta(days=1)
+        return lessons
