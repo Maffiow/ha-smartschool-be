@@ -319,7 +319,7 @@ async def test_disabled_module_does_not_trigger_reauth(hass: HomeAssistant, mock
 
     assert entry.state is ConfigEntryState.LOADED
     assert hass.config_entries.flow.async_progress() == []
-    assert entry.runtime_data.agenda.unavailable_modules == {"agenda"}
+    assert entry.runtime_data.agenda.unavailable_modules == {"agenda/tasks"}
     tasks = hass.states.get("sensor.smartschool_komende_taken_jan_peeters")
     assert tasks.state == "1"  # the planner still works
 

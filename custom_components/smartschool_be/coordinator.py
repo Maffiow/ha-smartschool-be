@@ -215,7 +215,7 @@ class SmartschoolAgendaCoordinator(_SmartschoolBaseCoordinator):
         """Lessons and planner items for a date range (runs in the executor)."""
         with self.api.lock:
             return {
-                "lessons": self._optional("agenda", self.api.get_lessons, start, end, default=[])
+                "lessons": self._optional("agenda/lessons", self.api.get_lessons, start, end, default=[])
                 if self.include_agenda
                 else [],
                 "planner": self._planner(start, end) if self.include_planner else [],
@@ -226,10 +226,10 @@ class SmartschoolAgendaCoordinator(_SmartschoolBaseCoordinator):
         data: dict[str, Any] = {"tasks": [], "hours": {}, "lessons": [], "planner": []}
 
         if self.include_agenda:
-            data["tasks"] = self._optional("agenda", self.api.get_future_tasks, default=[])
-            data["hours"] = self._optional("agenda", self.api.get_hours, default={})
+            data["tasks"] = self._optional("agenda/tasks", self.api.get_future_tasks, default=[])
+            data["hours"] = self._optional("agenda/hours", self.api.get_hours, default={})
             data["lessons"] = self._optional(
-                "agenda",
+                "agenda/lessons",
                 self.api.get_lessons,
                 today,
                 today + timedelta(days=AGENDA_DAYS_AHEAD),
