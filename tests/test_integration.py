@@ -75,10 +75,13 @@ COUNTERS = {"unread": 278, "total": 480}
 
 
 def _planner(*_args):
-    day = dt_util.now().date().isoformat()
+    # Today in HA's own time zone: a fixed UTC offset would land on another day
+    # depending on when the test runs.
+    start = dt_util.now().replace(hour=8, minute=25, second=0, microsecond=0)
+    end = start.replace(hour=9, minute=15)
     return [
         {"id": "p1", "kind": "task", "type": "Toets", "name": "Breuken", "course": "Wiskunde",
-         "location": None, "start": f"{day}T08:25:00+02:00", "end": f"{day}T09:15:00+02:00",
+         "location": None, "start": start.isoformat(), "end": end.isoformat(),
          "whole_day": False, "deadline": True, "status": None},
     ]
 
