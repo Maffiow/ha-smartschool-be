@@ -487,3 +487,36 @@ async def test_diagnostics_contain_no_personal_data(hass: HomeAssistant, mock_ap
     assert diag["agenda"]["planner_items"] == 1
     text = str(diag)
     assert "secret" not in text and "Jan Peeters" not in text and "Uitstap" not in text
+
+
+async def test_actions_need_exactly_one_loaded_account(hass: HomeAssistant, mock_api) -> None:
+    entry = await _setup(hass)
+    second = MockConfigEntry(domain=DOMAIN, data={**DATA, CONF_USERNAME: "an"}, unique_id="y", title="Smartschool (an)")
+    second.add_to_hass(hass)
+    await hass.config_entries.async_setup(second.entry_id)
+    await hass.async_block_till_done()
+
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(DOMAIN, "mark_message_unread", {"message_id": 1}, blocking=True)
+    assert err.value.translation_key == "multiple_entries"
+
+    for e in (entry, second):
+        await hass.config_entries.async_unload(e.entry_id)
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(DOMAIN, "mark_message_unread", {"message_id": 1}, blocking=True)
+    assert err.value.translation_key == "entry_not_found"
+
+
+async def test_diagnostics_with_modules_switched_off(hass: HomeAssistant, mock_api) -> None:
+    from custom_components.smartschool_be.diagnostics import async_get_config_entry_diagnostics
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=DATA, unique_id="x",
+        options={"enable_messages": False, "enable_agenda": False, "enable_planner": False},
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert "messages" not in diag and "agenda" not in diag
+    assert diag["results"]["courses"] == 2
