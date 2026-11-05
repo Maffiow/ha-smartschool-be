@@ -284,10 +284,11 @@ content: |-
 ## Een nieuwe versie uitbrengen
 
 1. Verhoog `version` in `custom_components/smartschool_be/manifest.json` (bv. `1.2.1`)
+1. Voeg in `CHANGELOG.md` een sectie `## [1.2.1]` toe met wat er veranderd is: dat wordt de tekst in het update-venster van Home Assistant
 2. Commit en push naar `main`
 3. Tag en push: `git tag v1.2.1 && git push origin v1.2.1`
 
-De workflow *Release* controleert of de tag overeenkomt met de manifest-versie en maakt de GitHub release aan; HACS biedt die daarna als update aan.
+De workflow *Release* controleert of de tag overeenkomt met de manifest-versie en maakt de GitHub release aan met de tekst uit `CHANGELOG.md`. HACS biedt die daarna aan als update onder **Instellingen → Updates**. HACS controleert custom repositories periodiek; wil je meteen kijken, kies dan in HACS bij Smartschool BE **⋮ → Update informatie**.
 
 ## Licentie
 

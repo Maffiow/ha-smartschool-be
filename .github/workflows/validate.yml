@@ -35,3 +35,16 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements_test.txt
       - run: pytest -q
+
+  changelog:
+    name: Changelog entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CHANGELOG.md has a section for the manifest version
+        run: |
+          VERSION=$(jq -r .version custom_components/smartschool_be/manifest.json)
+          grep -qF "## [$VERSION]" CHANGELOG.md || {
+            echo "::error::Add a '## [$VERSION]' section to CHANGELOG.md (it becomes the release notes)"
+            exit 1
+          }
