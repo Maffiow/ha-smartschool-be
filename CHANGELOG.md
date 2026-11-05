@@ -4,6 +4,17 @@ Elke versie hieronder verschijnt als release op GitHub en als update in Home Ass
 (**Instellingen → Updates**, via HACS). De tekst onder een versie is wat je in het
 update-venster te zien krijgt.
 
+## [1.10.0]
+
+- **Namen in je eigen taal:** sensor- en kalendernamen volgen de taal van Home Assistant
+  (bv. *Unread messages* in het Engels). Bestaande entiteiten houden hun id.
+- **Uitleg bij elk veld** bij het instellen en opnieuw aanmelden.
+- **Documentatie:** probleemoplossing, bekende beperkingen, hoe vaak gegevens bijwerken en
+  verwijderen.
+- **Kwaliteit:** testdekking van 79% naar 95%+ (afgedwongen in de controles) en een
+  `quality_scale.yaml` die bijhoudt welke regels van de kwaliteitsschaal van Home Assistant
+  gehaald zijn.
+
 ## [1.9.0]
 
 - **Eigen icoon:** de integratie toont nu het Smartschool-icoon in Home Assistant

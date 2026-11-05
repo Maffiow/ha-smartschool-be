@@ -290,3 +290,39 @@ def test_hours_and_lessons_in_chunks():
         "moment_id": "1", "date": "2026-11-02", "hour_id": "318", "course": "FR4",
         "subject": "Les", "classroom": "E.3", "teacher": "Ghysen", "note": None,
     }
+
+
+# --- session handling ---------------------------------------------------------
+
+def test_force_relogin_starts_a_fresh_session():
+    api = SmartschoolAPI(BASE, "jan", "pw", "2010-03-15")
+    old = api._session = FakeSmartschool({})
+    api._is_logged_in = True
+    api._warmed_modules = {"Messages"}
+    logins = []
+    api.login = lambda: logins.append(True)
+    api._force_relogin()
+    assert api._session is not old
+    assert api._warmed_modules == set() and logins == [True]
+    api.close()
+
+
+def test_import_skips_broken_cookies_and_restore_handles_network_errors():
+    api = api_with({("GET", "/"): requests.exceptions.ConnectionError("down")}, logged_in=False)
+    api.import_cookies([{"value": "no name"}, {"name": "PHPSESSID", "value": "abc", "domain": "s.smartschool.be"}])
+    assert [c.name for c in api._session.cookies] == ["PHPSESSID"]
+    with pytest.raises(SmartschoolConnectionError):
+        api.restore_session()
+    assert SmartschoolAPI(BASE, "jan", "pw").restore_session() is False  # no cookies at all
+
+
+def test_evaluations_page_edge_cases():
+    api = api_with({("GET", "evaluations"): Resp("/login", LOGIN_FORM, ctype="text/html")})
+    assert api._fetch_evaluations_page() is None  # sent to the login page
+    api = api_with({("GET", "evaluations"): Resp("/results", ctype="application/json", json_data=None)})
+    assert api._fetch_evaluations_page() is None  # unreadable JSON
+    api = api_with({("GET", "evaluations"): Resp("/results", ctype="application/json", json_data={"other": 1})})
+    assert api._fetch_evaluations_page() is None  # no list inside
+    no_course = [{"name": "T", "courses": [{}], "graphic": {}, "date": "2026-10-01"}]
+    api = api_with({("GET", "evaluations"): Resp("/results", ctype="application/json", json_data=no_course)})
+    assert api.get_all_evaluations() is None  # nothing to group by course
