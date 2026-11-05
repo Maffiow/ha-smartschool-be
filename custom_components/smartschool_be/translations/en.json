@@ -15,7 +15,7 @@
         "data_description": {
           "totp_secret": "Leave empty when you use the 6-digit code. With your authenticator's secret key (not the 6 digits) Home Assistant makes codes itself and never asks for one again.",
           "totp_code": "Only needed when your school asks for two-factor authentication. Type the code currently shown in your app (e.g. LastPass or Google Authenticator). Home Assistant then keeps the session, so you don't need a code every time.",
-          "base_url": "Your school's address, e.g. https://myschool.smartschool.be (without /login).",
+          "base_url": "Your school's address, e.g. {example_url} (without /login).",
           "username": "The username you sign in to Smartschool with (also for a parent/co-account).",
           "password": "Password of that Smartschool account.",
           "birthday": "The student's date of birth (YYYY-MM-DD); Smartschool asks for it when signing in."

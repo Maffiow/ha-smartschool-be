@@ -470,3 +470,20 @@ async def test_select_message_fills_popup_sensor(hass: HomeAssistant, mock_api) 
     assert state.attributes["bijlagen"] == ["brief.pdf"]
     assert state.attributes["id"] == 2
     assert "html" not in state.attributes  # never raw HTML in the dashboard
+
+
+async def test_diagnostics_contain_no_personal_data(hass: HomeAssistant, mock_api) -> None:
+    from custom_components.smartschool_be.diagnostics import async_get_config_entry_diagnostics
+
+    entry = await _setup(hass)
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diag["entry"]["password"] == "**REDACTED**"
+    assert diag["entry"]["username"] == "**REDACTED**"
+    assert diag["entry"]["birthday"] == "**REDACTED**"
+    assert diag["results"]["courses"] == 2
+    assert diag["results"]["evaluations"] == 3
+    assert diag["messages"]["counters"] == COUNTERS
+    assert diag["agenda"]["planner_items"] == 1
+    text = str(diag)
+    assert "secret" not in text and "Jan Peeters" not in text and "Uitstap" not in text

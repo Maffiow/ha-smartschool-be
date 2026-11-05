@@ -165,6 +165,7 @@ class SmartschoolResultsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=schema,
             errors=errors,
+            description_placeholders={"example_url": "https://mijnschool.smartschool.be"},
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]):

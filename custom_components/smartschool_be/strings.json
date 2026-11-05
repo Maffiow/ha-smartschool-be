@@ -15,7 +15,7 @@
         "data_description": {
           "totp_secret": "Laat leeg als je de 6-cijferige code gebruikt. Met de geheime sleutel van je authenticator (niet de 6 cijfers) maakt Home Assistant zelf codes en hoef je nooit opnieuw een code in te geven.",
           "totp_code": "Alleen nodig als je school tweestapsverificatie vraagt. Typ de code die nu in je app staat (bv. LastPass of Google Authenticator). Home Assistant bewaart daarna de sessie, zodat je niet telkens een code moet ingeven.",
-          "base_url": "Het adres van je school, bv. https://mijnschool.smartschool.be (zonder /login).",
+          "base_url": "Het adres van je school, bv. {example_url} (zonder /login).",
           "username": "Gebruikersnaam waarmee je op Smartschool inlogt (ook voor een ouder- of co-account).",
           "password": "Wachtwoord van dat Smartschool-account.",
           "birthday": "Geboortedatum van de leerling (JJJJ-MM-DD); Smartschool vraagt die bij het aanmelden ter controle."
