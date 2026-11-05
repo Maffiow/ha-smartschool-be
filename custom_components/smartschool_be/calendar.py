@@ -19,6 +19,9 @@ from .smartschool_api import SmartschoolError
 
 _LOGGER = logging.getLogger(__name__)
 
+# Data comes from a coordinator; the entity never updates in parallel itself.
+PARALLEL_UPDATES = 0
+
 # Never fetch more than this many days of lessons for one calendar view.
 _MAX_FETCH_DAYS = 62
 
@@ -125,7 +128,7 @@ class SmartschoolCalendar(CoordinatorEntity[SmartschoolAgendaCoordinator], Calen
         self, coordinator: SmartschoolAgendaCoordinator, username: str, entry_id: str
     ) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Agenda"
+        self._attr_translation_key = "agenda"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_agenda"
 
     def _cached_events(self) -> list[CalendarEvent]:

@@ -167,24 +167,24 @@ async def test_setup_and_sensors(hass: HomeAssistant, mock_api) -> None:
     frans = hass.states.get("sensor.smartschool_jan_peeters_frans")
     assert float(frans.state) == 50.0
 
-    latest = hass.states.get("sensor.smartschool_jan_peeters_laatste_resultaat")
+    latest = hass.states.get("sensor.smartschool_jan_peeters_latest_result")
     assert latest.state == "H2"
 
-    unread = hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten")
+    unread = hass.states.get("sensor.smartschool_jan_peeters_unread_messages")
     assert unread.state == "278"  # counters cover the whole inbox, not one page
     # Device name + short entity name, never doubled.
-    assert unread.attributes["friendly_name"] == "Smartschool jan.peeters Ongelezen berichten"
-    assert hass.states.get("sensor.jan_peeters_klas").attributes["friendly_name"] == "Jan Peeters Klas"
+    assert unread.attributes["friendly_name"] == "Smartschool jan.peeters Unread messages"
+    assert hass.states.get("sensor.jan_peeters_class").attributes["friendly_name"] == "Jan Peeters Class"
     assert unread.attributes["totaal_in_inbox"] == 480
     assert unread.attributes["berichten"][0]["id"] == 2
 
-    tasks = hass.states.get("sensor.smartschool_jan_peeters_komende_taken")
+    tasks = hass.states.get("sensor.smartschool_jan_peeters_upcoming_tasks")
     # agenda task + planner test; the task in the past is not counted
     assert tasks.state == "2"
     assert tasks.attributes["aantal_toetsen"] == 2
 
-    assert hass.states.get("sensor.jan_peeters_klas").state == "3A"
-    assert hass.states.get("sensor.jan_peeters_titularis").state == "Juf An"
+    assert hass.states.get("sensor.jan_peeters_class").state == "3A"
+    assert hass.states.get("sensor.jan_peeters_class_teacher").state == "Juf An"
     info = hass.states.get("sensor.jan_peeters_info")
     assert info.attributes["entity_picture"] == "https://userpicture.example/jan"
 
@@ -267,7 +267,7 @@ async def test_messages_failure_does_not_block_setup(hass: HomeAssistant, mock_a
     mock_api.side_effect = SmartschoolError("module uitgeschakeld")
     entry = await _setup(hass)
     assert entry.state is ConfigEntryState.LOADED
-    state = hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten")
+    state = hass.states.get("sensor.smartschool_jan_peeters_unread_messages")
     assert state.state == "unavailable"
 
 
@@ -360,13 +360,13 @@ async def test_disabled_module_does_not_trigger_reauth(hass: HomeAssistant, mock
     assert entry.state is ConfigEntryState.LOADED
     assert hass.config_entries.flow.async_progress() == []
     assert entry.runtime_data.agenda.unavailable_modules == {"agenda/tasks"}
-    tasks = hass.states.get("sensor.smartschool_jan_peeters_komende_taken")
+    tasks = hass.states.get("sensor.smartschool_jan_peeters_upcoming_tasks")
     assert tasks.state == "1"  # the planner still works
 
 
 async def test_options_switch_modules_off(hass: HomeAssistant, mock_api) -> None:
     entry = await _setup(hass)
-    assert hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten") is not None
+    assert hass.states.get("sensor.smartschool_jan_peeters_unread_messages") is not None
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
@@ -386,10 +386,10 @@ async def test_options_switch_modules_off(hass: HomeAssistant, mock_api) -> None
     assert entry.state is ConfigEntryState.LOADED
     assert entry.runtime_data.messages is None
     assert entry.runtime_data.agenda is None
-    assert hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten") is None
+    assert hass.states.get("sensor.smartschool_jan_peeters_unread_messages") is None
     assert hass.states.get("calendar.smartschool_jan_peeters_agenda") is None
     assert hass.states.get("sensor.smartschool_jan_peeters_frans") is not None
-    assert hass.states.get("sensor.jan_peeters_klas") is not None
+    assert hass.states.get("sensor.jan_peeters_class") is not None
 
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
@@ -448,9 +448,9 @@ async def test_stored_session_skips_login(hass: HomeAssistant) -> None:
 async def test_select_message_fills_popup_sensor(hass: HomeAssistant, mock_api) -> None:
     """select_message loads a message into the 'Geselecteerd bericht' sensor."""
     entry = await _setup(hass)
-    sensor_id = "sensor.smartschool_jan_peeters_geselecteerd_bericht"
+    sensor_id = "sensor.smartschool_jan_peeters_selected_message"
     assert hass.states.get(sensor_id).state == "unknown"
-    unread = hass.states.get("sensor.smartschool_jan_peeters_ongelezen_berichten")
+    unread = hass.states.get("sensor.smartschool_jan_peeters_unread_messages")
     assert unread.attributes["config_entry_id"] == entry.entry_id
 
     full = {

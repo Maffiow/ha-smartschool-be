@@ -274,12 +274,47 @@ content: |-
 ```
 <img width="1503" height="1000" alt="image" src="https://github.com/user-attachments/assets/b43306e5-e990-4830-847d-e89a8fb67b56" />
 
-## Opmerkingen
+## Hoe gegevens bijwerken
 
-- Resultaten worden elke **15 minuten** opgehaald, berichten elke **5 minuten**, de agenda elk **uur**
-- Smartschool vergt een account-verificatie (geboortedatum) bij elke nieuwe sessie; dit is ingebouwd en automatisch
-- Per API-aanroep worden maximaal 50 resultaten per pagina opgehaald; alle pagina's worden doorlopen
-- Deze integratie is **niet officieel** en heeft geen band met Smartschool/Scala BVBA
+| Onderdeel | Hoe vaak | Opmerking |
+|:----------|:---------|:----------|
+| Berichten | elke 5 minuten | De teller telt de hele inbox; de lijst toont de nieuwste 15. |
+| Resultaten en info van de kinderen | elke 15 minuten | |
+| Agenda en Planner | elk uur | De kalender haalt bij het openen de lessen van de bekeken periode op. |
+| Bericht openen (popup, `get_message`) | wanneer je erom vraagt | Smartschool markeert het bericht dan als gelezen. |
+
+De Smartschool-sessie blijft bewaard, ook na een herstart. Pas als Smartschool ze beëindigt, logt de integratie opnieuw in; vraagt je school 2FA, dan verschijnt de melding **Opnieuw aanmelden**.
+
+## Probleemoplossing
+
+| Wat je ziet | Oorzaak en oplossing |
+|:------------|:---------------------|
+| Melding **Opnieuw aanmelden** | Smartschool vraagt een nieuwe 2FA-code, of je wachtwoord/geboortedatum veranderde. Open de melding en vul de huidige 6-cijferige code in (wachtwoord mag leeg blijven). |
+| "Smartschool weigerde de 2FA-code" | De code was verlopen (30 seconden geldig) of fout getypt. Probeer met de code die nu in je app staat; bij een 2FA-sleutel: controleer de klok van Home Assistant. |
+| Een sensor blijft leeg of *niet beschikbaar* | Je school gebruikt dat onderdeel niet (bv. geen Resultaten in de lagere school). Zet het uit onder **Configureren**. In de diagnostics staat welke onderdelen je school niet aanbiedt. |
+| "… is niet beschikbaar (HTTP …, /pad, …)" in het logboek | Smartschool stuurde een onverwachte pagina terug. Het pad tussen haakjes zegt waar het misliep (bv. `/2fa` = opnieuw aanmelden nodig). |
+| Popup opent niet bij een klik op een bericht | Herlaad de app of browser volledig (in de app: **Instellingen → Frontend-cache resetten**), zodat het meegeleverde script geladen wordt. |
+| Nieuwe versie verschijnt niet bij Updates | HACS controleert custom repositories periodiek. Kies in HACS bij Smartschool BE **⋮ → Update informatie**. |
+
+**Diagnostics:** **Instellingen → Apparaten & diensten → Smartschool BE → ⋮ → Diagnostics downloaden**. Daarin staan enkel tellingen en statussen: geen namen, punten, berichten, wachtwoord, geboortedatum of 2FA-gegevens.
+
+**Debuglogboek:** zet op dezelfde pagina **Debuglogboek inschakelen** aan, herhaal het probleem en zet het weer uit; Home Assistant biedt dan het logbestand aan.
+
+## Bekende beperkingen
+
+- Smartschool heeft **geen publieke API**: de integratie gebruikt dezelfde aanvragen als de website. Verandert Smartschool zijn website, dan kan een onderdeel tijdelijk stoppen tot er een update is.
+- Welke onderdelen werken, hangt af van je school en je account (leerling, ouder of co-account).
+- **2FA via sms of e-mail** wordt niet ondersteund; enkel een authenticator-app.
+- Berichten **met bijlagen versturen** kan niet; bijlagen van ontvangen berichten worden wel getoond (naam), maar niet gedownload.
+- Een bericht openen in Home Assistant markeert het als **gelezen** in Smartschool.
+- Deze integratie is **niet officieel** en heeft geen band met Smartschool/Scala BVBA.
+
+## Verwijderen
+
+1. Ga naar **Instellingen → Apparaten & diensten → Smartschool BE**.
+2. Klik bij het account op **⋮ → Verwijderen**. De opgeslagen gegevens (wachtwoord, sessie, 2FA-sleutel) worden mee verwijderd.
+3. Wil je de integratie ook van je systeem halen: open **HACS**, zoek *Smartschool BE*, kies **⋮ → Verwijderen** en herstart Home Assistant.
+4. Kaarten op je dashboards die Smartschool-entiteiten gebruiken, moet je zelf weghalen.
 
 ## Een nieuwe versie uitbrengen
 

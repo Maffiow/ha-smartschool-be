@@ -25,6 +25,9 @@ from .entity import account_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
+# Data comes from coordinators; entities never update in parallel themselves.
+PARALLEL_UPDATES = 0
+
 _SAFE_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -176,7 +179,7 @@ class SmartschoolLatestResultSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator: SmartschoolCoordinator, username: str, entry_id: str) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Laatste resultaat"
+        self._attr_translation_key = "latest_result"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_latest_result"
 
     @property
@@ -317,7 +320,7 @@ class SmartschoolStudentInfoSensor(CoordinatorEntity, SensorEntity):
         self._student_id = int(student["userID"])
         self._base_url = base_url.rstrip("/")
 
-        self._attr_name = "Info"
+        self._attr_translation_key = "student_info"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_info"
 
     def _get_student(self) -> dict:
@@ -399,7 +402,7 @@ class SmartschoolUnreadMessagesSensor(CoordinatorEntity, SensorEntity):
         self, coordinator: SmartschoolMessagesCoordinator, username: str, entry_id: str
     ) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Ongelezen berichten"
+        self._attr_translation_key = "unread_messages"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_unread_messages"
 
     def _inbox(self) -> list[dict]:
@@ -451,7 +454,7 @@ class SmartschoolUpcomingTasksSensor(CoordinatorEntity, SensorEntity):
         self, coordinator: SmartschoolAgendaCoordinator, username: str, entry_id: str
     ) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Komende taken"
+        self._attr_translation_key = "upcoming_tasks"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_upcoming_tasks"
 
     def _tasks(self) -> list[dict]:
@@ -511,7 +514,7 @@ class SmartschoolStudentClassSensor(SmartschoolStudentInfoSensor):
 
     def __init__(self, coordinator, student, base_url, entry_id) -> None:
         super().__init__(coordinator, student, base_url, entry_id)
-        self._attr_name = "Klas"
+        self._attr_translation_key = "student_class"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_class"
 
     @property
@@ -535,7 +538,7 @@ class SmartschoolStudentTitularSensor(SmartschoolStudentInfoSensor):
 
     def __init__(self, coordinator, student, base_url, entry_id) -> None:
         super().__init__(coordinator, student, base_url, entry_id)
-        self._attr_name = "Titularis"
+        self._attr_translation_key = "student_titular"
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_student_{self._student_id}_titular"
 
     def _titulars(self) -> list[str]:
@@ -564,7 +567,7 @@ class SmartschoolSelectedMessageSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_icon = "mdi:email-open-outline"
-    _attr_name = "Geselecteerd bericht"
+    _attr_translation_key = "selected_message"
     _unrecorded_attributes = frozenset(
         {"id", "van", "datum", "aan", "cc", "tekst", "bijlagen", "kan_antwoorden"}
     )

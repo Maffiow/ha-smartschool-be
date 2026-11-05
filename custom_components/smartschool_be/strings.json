@@ -14,7 +14,11 @@
         },
         "data_description": {
           "totp_secret": "Laat leeg als je de 6-cijferige code gebruikt. Met de geheime sleutel van je authenticator (niet de 6 cijfers) maakt Home Assistant zelf codes en hoef je nooit opnieuw een code in te geven.",
-          "totp_code": "Alleen nodig als je school tweestapsverificatie vraagt. Typ de code die nu in je app staat (bv. LastPass of Google Authenticator). Home Assistant bewaart daarna de sessie, zodat je niet telkens een code moet ingeven."
+          "totp_code": "Alleen nodig als je school tweestapsverificatie vraagt. Typ de code die nu in je app staat (bv. LastPass of Google Authenticator). Home Assistant bewaart daarna de sessie, zodat je niet telkens een code moet ingeven.",
+          "base_url": "Het adres van je school, bv. https://mijnschool.smartschool.be (zonder /login).",
+          "username": "Gebruikersnaam waarmee je op Smartschool inlogt (ook voor een ouder- of co-account).",
+          "password": "Wachtwoord van dat Smartschool-account.",
+          "birthday": "Geboortedatum van de leerling (JJJJ-MM-DD); Smartschool vraagt die bij het aanmelden ter controle."
         }
       },
       "reauth_confirm": {
@@ -28,7 +32,9 @@
         },
         "data_description": {
           "totp_secret": "Laat leeg als je de 6-cijferige code gebruikt. Met de geheime sleutel van je authenticator (niet de 6 cijfers) maakt Home Assistant zelf codes en hoef je nooit opnieuw een code in te geven.",
-          "totp_code": "Alleen nodig als je school tweestapsverificatie vraagt. Typ de code die nu in je app staat (bv. LastPass of Google Authenticator). Home Assistant bewaart daarna de sessie, zodat je niet telkens een code moet ingeven."
+          "totp_code": "Alleen nodig als je school tweestapsverificatie vraagt. Typ de code die nu in je app staat (bv. LastPass of Google Authenticator). Home Assistant bewaart daarna de sessie, zodat je niet telkens een code moet ingeven.",
+          "password": "Laat leeg om het bewaarde wachtwoord te gebruiken.",
+          "birthday": "Geboortedatum van de leerling (JJJJ-MM-DD)."
         }
       }
     },
@@ -228,6 +234,36 @@
           "enable_planner": "Lessen, opdrachten en to-do's uit de nieuwe Planner.",
           "enable_students": "Een apparaat per kind met klas, titularis en foto."
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest_result": {
+        "name": "Laatste resultaat"
+      },
+      "unread_messages": {
+        "name": "Ongelezen berichten"
+      },
+      "upcoming_tasks": {
+        "name": "Komende taken"
+      },
+      "student_info": {
+        "name": "Info"
+      },
+      "student_class": {
+        "name": "Klas"
+      },
+      "student_titular": {
+        "name": "Titularis"
+      },
+      "selected_message": {
+        "name": "Geselecteerd bericht"
+      }
+    },
+    "calendar": {
+      "agenda": {
+        "name": "Agenda"
       }
     }
   }

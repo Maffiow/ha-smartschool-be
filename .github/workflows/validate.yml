@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -r requirements_test.txt
-      - run: pytest -q
+      - run: pytest -q --cov=custom_components.smartschool_be --cov-report=term-missing
 
   changelog:
     name: Changelog entry

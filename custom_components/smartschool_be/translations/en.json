@@ -14,7 +14,11 @@
         },
         "data_description": {
           "totp_secret": "Leave empty when you use the 6-digit code. With your authenticator's secret key (not the 6 digits) Home Assistant makes codes itself and never asks for one again.",
-          "totp_code": "Only needed when your school asks for two-factor authentication. Type the code currently shown in your app (e.g. LastPass or Google Authenticator). Home Assistant then keeps the session, so you don't need a code every time."
+          "totp_code": "Only needed when your school asks for two-factor authentication. Type the code currently shown in your app (e.g. LastPass or Google Authenticator). Home Assistant then keeps the session, so you don't need a code every time.",
+          "base_url": "Your school's address, e.g. https://myschool.smartschool.be (without /login).",
+          "username": "The username you sign in to Smartschool with (also for a parent/co-account).",
+          "password": "Password of that Smartschool account.",
+          "birthday": "The student's date of birth (YYYY-MM-DD); Smartschool asks for it when signing in."
         }
       },
       "reauth_confirm": {
@@ -28,7 +32,9 @@
         },
         "data_description": {
           "totp_secret": "Leave empty when you use the 6-digit code. With your authenticator's secret key (not the 6 digits) Home Assistant makes codes itself and never asks for one again.",
-          "totp_code": "Only needed when your school asks for two-factor authentication. Type the code currently shown in your app (e.g. LastPass or Google Authenticator). Home Assistant then keeps the session, so you don't need a code every time."
+          "totp_code": "Only needed when your school asks for two-factor authentication. Type the code currently shown in your app (e.g. LastPass or Google Authenticator). Home Assistant then keeps the session, so you don't need a code every time.",
+          "password": "Leave empty to keep the stored password.",
+          "birthday": "The student's date of birth (YYYY-MM-DD)."
         }
       }
     },
@@ -228,6 +234,36 @@
           "enable_planner": "Lessons, assignments and to-dos from the new Planner.",
           "enable_students": "One device per child with class, class teacher and photo."
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest_result": {
+        "name": "Latest result"
+      },
+      "unread_messages": {
+        "name": "Unread messages"
+      },
+      "upcoming_tasks": {
+        "name": "Upcoming tasks"
+      },
+      "student_info": {
+        "name": "Info"
+      },
+      "student_class": {
+        "name": "Class"
+      },
+      "student_titular": {
+        "name": "Class teacher"
+      },
+      "selected_message": {
+        "name": "Selected message"
+      }
+    },
+    "calendar": {
+      "agenda": {
+        "name": "Agenda"
       }
     }
   }
